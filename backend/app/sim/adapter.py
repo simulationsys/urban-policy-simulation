@@ -57,7 +57,7 @@ def build_engine(engine_kind: str, config: ScenarioConfig) -> SimEngine:
         from app.sim.fake_engine import FakeSimEngine
 
         return FakeSimEngine(config)
-    # if engine_kind == "mesa":
-    #     from app.sim.mesa_engine import MesaSimEngine
-    #     return MesaSimEngine(config)
+    if engine_kind == "mesa":
+        from simulation.engine import MesaSimEngine
+        return MesaSimEngine(config)
     raise ValueError(f"Unknown sim engine: {engine_kind!r} (expected 'fake' or 'mesa')")

@@ -1,0 +1,23 @@
+[project]
+name = "uip-simulation"
+version = "0.1.0"
+description = "Urban Intelligence Platform — Simulation Core (SUB-01, SUB-02, SUB-03)"
+requires-python = ">=3.11"
+dependencies = [
+    "mesa>=2.2.0",
+    "numpy>=1.24.0",
+    "networkx>=3.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["simulation*"]
