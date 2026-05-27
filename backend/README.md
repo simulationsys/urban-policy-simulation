@@ -6,7 +6,10 @@ also the **integration / DevOps owner**.
 
 - Role brief: [`docs/ROLE_5_BACKEND.md`](docs/ROLE_5_BACKEND.md)
 - Project spec: [`docs/PROJECT_SPEC (1).md`](<docs/PROJECT_SPEC (1).md>)
-- AI-agent guide for this folder: [`CLAUDE.md`](CLAUDE.md)
+- AI-agent guide for this folder: [`CLAUDE.md`](CLAUDE.md)/
+
+
+sarthak gaandu
 
 > **v1 runs against a stub simulation** (`app/sim/fake_engine.py`) so the full data→sim→API→UI slice
 > works before SUB-01 lands. Swap in the real engine by implementing the `SimEngine` Protocol in
