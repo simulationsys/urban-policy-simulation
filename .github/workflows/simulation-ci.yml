@@ -24,6 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # Install backend package first as simulation imports backend app schemas
+          pip install -e ../backend
           pip install -e ".[dev]"
           # Install ruff and black for static analysis checks
           pip install ruff black
