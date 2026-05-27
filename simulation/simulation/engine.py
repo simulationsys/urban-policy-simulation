@@ -7,7 +7,6 @@ satisfying the backend SimEngine Protocol.
 from __future__ import annotations
 
 import random
-from typing import TYPE_CHECKING
 import mesa
 import numpy as np
 

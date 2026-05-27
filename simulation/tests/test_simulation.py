@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from app.models.schemas import ScenarioConfig, Event, EventType
 from simulation.engine import MesaSimEngine, UrbanModel
 
@@ -172,7 +171,7 @@ def test_shortest_path_cache_and_invalidation():
     assert len(net._routing_cache) == 0
 
     # Query again and verify cache repopulated
-    path3 = net.find_shortest_path(source, target, "car")
+    assert net.find_shortest_path(source, target, "car") is not None
     assert len(net._routing_cache) == 1
 
     # Invalidate via congestion update
@@ -182,7 +181,6 @@ def test_shortest_path_cache_and_invalidation():
 
 def test_multimodal_routing_and_transfers():
     """Verify separate metro station nodes and transfer edges route correctly."""
-    import math
     config = ScenarioConfig(
         name="test_scenario",
         population=10,
