@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from simulation.engine import UrbanModel
     from simulation.network import MultiModalNetwork
 
+
 class AgentState:
     AT_HOME = "AT_HOME"
     DEPARTING = "DEPARTING"
@@ -54,7 +55,7 @@ class CitizenAgent(mesa.Agent):
         self.base_morning_departure = 480 + random.randint(0, 90)
         # Average workday duration: 8 hours (480 mins)
         self.work_duration = 480 + random.randint(-30, 90)
-        
+
         # Adaptation adjustments (learned through experience)
         self.departure_adjustment = 0.0
 
@@ -150,7 +151,9 @@ class CitizenAgent(mesa.Agent):
         # Coefficient Weights depending on Income bracket (1-5, low to high)
         # Low income has high cost sensitivity, high income has high time sensitivity
         beta_time = -0.05 - 0.03 * self.income_bracket
-        beta_cost = -0.15 + 0.025 * self.income_bracket  # less negative as income increases
+        beta_cost = (
+            -0.15 + 0.025 * self.income_bracket
+        )  # less negative as income increases
         beta_comfort = 0.5 + 0.1 * self.income_bracket
 
         # Weather multiplier
@@ -225,13 +228,15 @@ class CitizenAgent(mesa.Agent):
         # Metro: ₹40 flat or ₹0 if they have a pre-purchased pass
         if mode == "metro":
             return 0 if self.has_metro_pass else 4000
-        
+
         # Bus: ₹20 flat, scales with bus capacity multiplier policy (cheaper bus incentives)
         elif mode == "bus":
             base_fare = 2000
             # Bus fare could be subsidized if bus capacity is boosted
             if self.model.network.bus_capacity_multiplier > 1.0:
-                return int(base_fare * (2.0 - self.model.network.bus_capacity_multiplier))
+                return int(
+                    base_fare * (2.0 - self.model.network.bus_capacity_multiplier)
+                )
             return base_fare
 
         # Car: ₹12/km base + fuel price delta policy in Paise
@@ -270,17 +275,17 @@ class CitizenAgent(mesa.Agent):
         """Add positive reward for modes that have been successful in memory."""
         if not self.memory:
             return 0.0
-        
+
         matches = [m for m in self.memory if m["mode"] == mode]
         if not matches:
             return 0.0
 
         # Average duration of recent commutes in this mode
         avg_dur = sum(m["duration"] for m in matches) / len(matches)
-        
+
         # If average duration was fast (< 30 mins) and highly comfortable, give habit bonus
         avg_comfort = sum(m["comfort"] for m in matches) / len(matches)
-        
+
         bonus = 0.0
         if avg_dur < 40.0:
             bonus += 0.5
@@ -300,28 +305,32 @@ class CitizenAgent(mesa.Agent):
         # For simplicity, let's advance their position on the route path index.
         # We can calculate travel times per link and advance appropriately.
         net: MultiModalNetwork = self.model.network
-        
-        ticks_passed = (self.model.sim_time_minutes - self.commute_start_time)
-        estimated_total_time = net.calculate_path_travel_time(self.current_route, self.current_mode)
+
+        ticks_passed = self.model.sim_time_minutes - self.commute_start_time
+        estimated_total_time = net.calculate_path_travel_time(
+            self.current_route, self.current_mode
+        )
 
         if ticks_passed >= estimated_total_time:
             # Commute finished!
             duration = ticks_passed
-            comfort = self.get_comfort_score(self.current_mode, net.weather_rain_intensity)
+            comfort = self.get_comfort_score(
+                self.current_mode, net.weather_rain_intensity
+            )
 
             # Record outcome in memory
-            self.memory.append({
-                "mode": self.current_mode,
-                "duration": duration,
-                "comfort": comfort
-            })
+            self.memory.append(
+                {"mode": self.current_mode, "duration": duration, "comfort": comfort}
+            )
             if len(self.memory) > 10:
                 self.memory.pop(0)
 
             # Adapt schedule if commute was terrible (>50 mins)
             if duration > 50.0:
                 # Leave 15 mins earlier tomorrow to beat congestion
-                self.departure_adjustment = max(-120.0, self.departure_adjustment - 15.0)
+                self.departure_adjustment = max(
+                    -120.0, self.departure_adjustment - 15.0
+                )
             elif duration < 25.0 and self.departure_adjustment < 0.0:
                 # Gradually return to normal schedule if traffic improves
                 self.departure_adjustment += 5.0
@@ -338,4 +347,6 @@ class CitizenAgent(mesa.Agent):
         else:
             # Advance route index proportionally
             fraction = ticks_passed / max(1.0, estimated_total_time)
-            self.route_index = min(len(self.current_route) - 1, int(fraction * len(self.current_route)))
+            self.route_index = min(
+                len(self.current_route) - 1, int(fraction * len(self.current_route))
+            )

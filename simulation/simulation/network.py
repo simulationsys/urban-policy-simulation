@@ -20,6 +20,7 @@ BUS_BASE_SPEED = 6.0  # ~22 km/h
 METRO_SPEED = 12.0  # ~43 km/h
 CAR_FREE_FLOW_SPEED = 11.0  # ~40 km/h
 
+
 class SegmentInfo(TypedDict):
     length: float
     capacity: float
@@ -106,7 +107,6 @@ class MultiModalNetwork:
             self._weather_rain_intensity = value
             self.clear_routing_cache()
 
-
         # Build synthetic road intersections (Grid nodes)
         self._build_road_nodes()
         self._build_road_links()
@@ -126,12 +126,7 @@ class MultiModalNetwork:
                 lat = lat_start + r * self.spacing
                 lon = lon_start + c * self.spacing
                 self.g.add_node(
-                    node_id,
-                    type="intersection",
-                    lat=lat,
-                    lon=lon,
-                    r=r,
-                    c=c
+                    node_id, type="intersection", lat=lat, lon=lon, r=r, c=c
                 )
 
     def _build_road_links(self) -> None:
@@ -153,12 +148,18 @@ class MultiModalNetwork:
 
                 for nbr in neighbors:
                     # Physical distance in meters (approx. 111,000 meters per degree)
-                    dx = (self.g.nodes[nbr]["lon"] - self.g.nodes[curr]["lon"]) * 111000 * math.cos(math.radians(CITY_LAT))
+                    dx = (
+                        (self.g.nodes[nbr]["lon"] - self.g.nodes[curr]["lon"])
+                        * 111000
+                        * math.cos(math.radians(CITY_LAT))
+                    )
                     dy = (self.g.nodes[nbr]["lat"] - self.g.nodes[curr]["lat"]) * 111000
-                    length = math.sqrt(dx*dx + dy*dy)
+                    length = math.sqrt(dx * dx + dy * dy)
 
                     # Lanes capacity: segments closer to center have higher capacity
-                    dist_to_center = math.sqrt((r - self.size/2)**2 + (c - self.size/2)**2)
+                    dist_to_center = math.sqrt(
+                        (r - self.size / 2) ** 2 + (c - self.size / 2) ** 2
+                    )
                     capacity = max(100.0, 500.0 - 40.0 * dist_to_center)
 
                     self.g.add_edge(
@@ -170,7 +171,7 @@ class MultiModalNetwork:
                         flow=0,
                         free_flow_speed=CAR_FREE_FLOW_SPEED,
                         metro_line=None,
-                        bus_route=None
+                        bus_route=None,
                     )
 
     def _build_metro_system(self) -> None:
@@ -193,14 +194,10 @@ class MultiModalNetwork:
             lon = self.g.nodes[n]["lon"]
             station_id = f"metro_{line_name}_station_{n}"
             station_ids.append(station_id)
-            
+
             # Add dedicated metro station node
             self.g.add_node(
-                station_id,
-                type="metro_station",
-                line=line_name,
-                lat=lat,
-                lon=lon
+                station_id, type="metro_station", line=line_name, lat=lat, lon=lon
             )
             # Mark the physical road intersection as having transit access
             self.g.nodes[n]["metro_station"] = True
@@ -215,7 +212,7 @@ class MultiModalNetwork:
                 flow=0,
                 free_flow_speed=WALK_SPEED,
                 metro_line=None,
-                bus_route=None
+                bus_route=None,
             )
             self.g.add_edge(
                 station_id,
@@ -226,19 +223,23 @@ class MultiModalNetwork:
                 flow=0,
                 free_flow_speed=WALK_SPEED,
                 metro_line=None,
-                bus_route=None
+                bus_route=None,
             )
 
         # Wire metro tracks between consecutive stations
         for i in range(len(station_ids) - 1):
-            s1, s2 = station_ids[i], station_ids[i+1]
-            
+            s1, s2 = station_ids[i], station_ids[i + 1]
+
             # Add bidirectional metro links (completely separate from road links)
             for src, dst in [(s1, s2), (s2, s1)]:
                 # Physical length matching road segment
-                dx = (self.g.nodes[dst]["lon"] - self.g.nodes[src]["lon"]) * 111000 * math.cos(math.radians(CITY_LAT))
+                dx = (
+                    (self.g.nodes[dst]["lon"] - self.g.nodes[src]["lon"])
+                    * 111000
+                    * math.cos(math.radians(CITY_LAT))
+                )
                 dy = (self.g.nodes[dst]["lat"] - self.g.nodes[src]["lat"]) * 111000
-                length = math.sqrt(dx*dx + dy*dy)
+                length = math.sqrt(dx * dx + dy * dy)
 
                 self.g.add_edge(
                     src,
@@ -250,23 +251,31 @@ class MultiModalNetwork:
                     flow=0,
                     free_flow_speed=METRO_SPEED,
                     metro_line=line_name,
-                    bus_route=None
+                    bus_route=None,
                 )
-
 
     def _build_bus_system(self) -> None:
         """Build major bus loop lines."""
         # Bus loop around the inner square (e.g., ring road)
         # For a size=8 grid, loop around index 2 and 5
         bus_nodes = [
-            "node_2_2", "node_2_3", "node_2_4", "node_2_5",
-            "node_3_5", "node_4_5", "node_5_5", "node_5_4",
-            "node_5_3", "node_5_2", "node_4_2", "node_3_2",
-            "node_2_2"
+            "node_2_2",
+            "node_2_3",
+            "node_2_4",
+            "node_2_5",
+            "node_3_5",
+            "node_4_5",
+            "node_5_5",
+            "node_5_4",
+            "node_5_3",
+            "node_5_2",
+            "node_4_2",
+            "node_3_2",
+            "node_2_2",
         ]
-        
+
         for i in range(len(bus_nodes) - 1):
-            n1, n2 = bus_nodes[i], bus_nodes[i+1]
+            n1, n2 = bus_nodes[i], bus_nodes[i + 1]
             self.g.nodes[n1]["bus_stop"] = True
             self.g.nodes[n2]["bus_stop"] = True
 
@@ -312,7 +321,7 @@ class MultiModalNetwork:
             capacity = edge_data["capacity"]
             # Weather reduces lane capacity too by up to 30%
             cap = capacity * (1.0 - 0.30 * self.weather_rain_intensity)
-            
+
             # Calibrated mixed-traffic BPR formula for Indian roads
             # Mixed-traffic has lower threshold of speed degradation but standard exponential growth
             # We use alpha = 0.20 and beta = 4.0 to make it slightly more sensitive to early traffic (mixed-traffic friction)
@@ -337,8 +346,9 @@ class MultiModalNetwork:
 
         return t_zero
 
-
-    def find_shortest_path(self, source: str, target: str, mode: str) -> list[str] | None:
+    def find_shortest_path(
+        self, source: str, target: str, mode: str
+    ) -> list[str] | None:
         """Find the shortest path for a given mode of transport using the routing cache.
 
         Returns a list of node IDs or None.
@@ -354,7 +364,7 @@ class MultiModalNetwork:
         # Define edge weight mapping based on the travel mode
         def weight_func(u: str, v: str, edge_attr: dict) -> float:
             etype = edge_attr["type"]
-            
+
             if mode == "walk":
                 # Walking uses road network only at walk speed
                 if etype != "road":
@@ -410,7 +420,6 @@ class MultiModalNetwork:
             self._routing_cache[cache_key] = None
             return None
 
-
     def calculate_path_travel_time(self, path: list[str], mode: str) -> float:
         """Sum travel times over a path for a specific mode."""
         if not path or len(path) < 2:
@@ -418,16 +427,18 @@ class MultiModalNetwork:
 
         total_time = 0.0
         for i in range(len(path) - 1):
-            u, v = path[i], path[i+1]
+            u, v = path[i], path[i + 1]
             if self.g.has_edge(u, v):
                 edge_data = self.g.edges[u, v]
-                
+
                 # Define weight
                 etype = edge_data["type"]
                 if mode == "walk":
                     t = edge_data["length"] / WALK_SPEED
                 elif mode == "bike":
-                    t = (edge_data["length"] / BIKE_SPEED) * (1.0 + 0.5 * self.weather_rain_intensity)
+                    t = (edge_data["length"] / BIKE_SPEED) * (
+                        1.0 + 0.5 * self.weather_rain_intensity
+                    )
                 elif mode in ("car", "auto"):
                     t = self.compute_bpr_travel_time(u, v, edge_data)
                 elif mode == "metro":
@@ -444,13 +455,12 @@ class MultiModalNetwork:
                         t = edge_data["length"] / WALK_SPEED
                 else:
                     t = edge_data["length"] / WALK_SPEED
-                
+
                 total_time += t
             else:
                 # Fallback if graph is missing edge
                 total_time += 10.0
         return total_time / 60.0  # return minutes
-
 
     def update_road_congestion(self, active_commuters: list) -> None:
         """Reset flow and count active agents on each road segment, and invalidate the routing cache."""
@@ -469,4 +479,3 @@ class MultiModalNetwork:
 
         # Clear routing cache as congestion and travel times have changed for the next tick
         self.clear_routing_cache()
-

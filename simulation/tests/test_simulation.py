@@ -9,11 +9,7 @@ from simulation.engine import MesaSimEngine, UrbanModel
 def test_model_initialization():
     """Verify the UrbanModel correctly initializes its agents and multi-modal network."""
     config = ScenarioConfig(
-        name="test_scenario",
-        population=100,
-        seed=42,
-        tick_minutes=5,
-        params={}
+        name="test_scenario", population=100, seed=42, tick_minutes=5, params={}
     )
     model = UrbanModel(config)
 
@@ -36,11 +32,7 @@ def test_model_initialization():
 def test_sim_engine_steps():
     """Verify advancing ticks using MesaSimEngine correct increments states."""
     config = ScenarioConfig(
-        name="test_scenario",
-        population=100,
-        seed=42,
-        tick_minutes=5,
-        params={}
+        name="test_scenario", population=100, seed=42, tick_minutes=5, params={}
     )
     engine = MesaSimEngine(config)
 
@@ -58,21 +50,14 @@ def test_sim_engine_steps():
 def test_event_injection():
     """Verify events propagate and update physical properties of network."""
     config = ScenarioConfig(
-        name="test_scenario",
-        population=100,
-        seed=42,
-        tick_minutes=5,
-        params={}
+        name="test_scenario", population=100, seed=42, tick_minutes=5, params={}
     )
     engine = MesaSimEngine(config)
 
     assert engine.model.network.weather_rain_intensity == 0.0
 
     # Queue weather event
-    ev = Event(
-        type=EventType.weather,
-        payload={"rain_intensity": 0.85}
-    )
+    ev = Event(type=EventType.weather, payload={"rain_intensity": 0.85})
     engine.queue_event(ev)
 
     # Edge-flow before step should be unmodified
@@ -94,14 +79,14 @@ def test_strict_determinism():
         population=150,
         seed=101,
         tick_minutes=5,
-        params={"bus_capacity_pct": 1.0}
+        params={"bus_capacity_pct": 1.0},
     )
     config_b = ScenarioConfig(
         name="deterministic_scenario",
         population=150,
         seed=101,
         tick_minutes=5,
-        params={"bus_capacity_pct": 1.0}
+        params={"bus_capacity_pct": 1.0},
     )
 
     engine_a = MesaSimEngine(config_a)
@@ -124,9 +109,11 @@ def test_strict_determinism():
         assert snap_a.metrics.rain_intensity == snap_b.metrics.rain_intensity
         assert snap_a.metrics.avg_commute_minutes == snap_b.metrics.avg_commute_minutes
         assert snap_a.metrics.metro_load_pct == snap_b.metrics.metro_load_pct
-        assert snap_a.metrics.road_congestion_index == snap_b.metrics.road_congestion_index
+        assert (
+            snap_a.metrics.road_congestion_index == snap_b.metrics.road_congestion_index
+        )
         assert snap_a.metrics.agents_commuting == snap_b.metrics.agents_commuting
-        
+
         # Check mode share matches perfectly
         for mode, val in snap_a.metrics.mode_share.items():
             assert snap_b.metrics.mode_share[mode] == val
@@ -142,18 +129,14 @@ def test_strict_determinism():
 def test_shortest_path_cache_and_invalidation():
     """Verify that routing cache saves redundant runs and invalidates on changes."""
     config = ScenarioConfig(
-        name="test_scenario",
-        population=10,
-        seed=42,
-        tick_minutes=5,
-        params={}
+        name="test_scenario", population=10, seed=42, tick_minutes=5, params={}
     )
     model = UrbanModel(config)
     net = model.network
 
     source = "node_0_0"
     target = "node_5_5"
-    
+
     # Check cache is initially empty
     assert len(net._routing_cache) == 0
 
@@ -182,11 +165,7 @@ def test_shortest_path_cache_and_invalidation():
 def test_multimodal_routing_and_transfers():
     """Verify separate metro station nodes and transfer edges route correctly."""
     config = ScenarioConfig(
-        name="test_scenario",
-        population=10,
-        seed=42,
-        tick_minutes=5,
-        params={}
+        name="test_scenario", population=10, seed=42, tick_minutes=5, params={}
     )
     model = UrbanModel(config)
     net = model.network
@@ -198,35 +177,37 @@ def test_multimodal_routing_and_transfers():
 
     path = net.find_shortest_path(source, target, "metro")
     assert path is not None
-    
+
     # Path should include transfer node and metro station nodes, e.g.:
     # node_4_0 -> metro_purple_station_node_4_0 -> ... -> metro_purple_station_node_4_7 -> node_4_7
     assert any("metro_purple_station" in node for node in path)
-    assert any(net.g.edges[path[i], path[i+1]]["type"] == "transfer" for i in range(len(path)-1))
+    assert any(
+        net.g.edges[path[i], path[i + 1]]["type"] == "transfer"
+        for i in range(len(path) - 1)
+    )
 
     # Cars and autos should not use metro or transfer links
     car_path = net.find_shortest_path(source, target, "car")
     assert car_path is not None
-    for i in range(len(car_path)-1):
-        edge_data = net.g.edges[car_path[i], car_path[i+1]]
+    for i in range(len(car_path) - 1):
+        edge_data = net.g.edges[car_path[i], car_path[i + 1]]
         assert edge_data["type"] == "road"
 
 
 def test_calibrated_bpr_congestion():
     """Verify road travel times scale correctly with flow and mixed-traffic parameters."""
     import math
+
     config = ScenarioConfig(
-        name="test_scenario",
-        population=10,
-        seed=42,
-        tick_minutes=5,
-        params={}
+        name="test_scenario", population=10, seed=42, tick_minutes=5, params={}
     )
     model = UrbanModel(config)
     net = model.network
 
     # Grab a road edge
-    road_edges = [(u, v, d) for u, v, d in net.g.edges(data=True) if d["type"] == "road"]
+    road_edges = [
+        (u, v, d) for u, v, d in net.g.edges(data=True) if d["type"] == "road"
+    ]
     u, v, data = road_edges[0]
 
     # Free flow travel time
@@ -242,7 +223,6 @@ def test_calibrated_bpr_congestion():
 
     # Travel time should never spike infinitely (capped multiplier)
     data_overloaded = data.copy()
-    data_overloaded["flow"] = int(data["capacity"] * 100) # 100x capacity!
+    data_overloaded["flow"] = int(data["capacity"] * 100)  # 100x capacity!
     t_overloaded = net.compute_bpr_travel_time(u, v, data_overloaded)
     assert t_overloaded <= t0 * 10.0
-
