@@ -93,7 +93,7 @@ def calculate_metrics(model: UrbanModel) -> dict:
     # Boost commute times and congestion when raining
     rain = net.weather_rain_intensity
     if rain > 0:
-        avg_commute *= (1.0 + 0.6 * rain)
+        avg_commute *= 1.0 + 0.6 * rain
         road_congestion = min(1.0, road_congestion + 0.3 * rain)
 
     return {

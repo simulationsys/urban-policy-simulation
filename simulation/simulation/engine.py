@@ -25,6 +25,7 @@ from app.models.schemas import (
     EventType,
 )
 
+
 class SimpleScheduler:
     """A clean, lightweight, deterministic agent scheduler."""
 
@@ -87,7 +88,8 @@ class UrbanModel(mesa.Model):
         """Create a diverse, demographic-typical population of commuting agents."""
         # Retrieve physical road nodes for home/work assignments
         intersection_nodes = [
-            node_id for node_id, data in self.network.g.nodes(data=True)
+            node_id
+            for node_id, data in self.network.g.nodes(data=True)
             if data.get("type") == "intersection"
         ]
 
@@ -98,7 +100,7 @@ class UrbanModel(mesa.Model):
             # Demographics
             # Age: 18 to 70
             age = self._rng.randint(18, 70)
-            
+
             # Income Bracket: 1 to 5 (following bell curve)
             income_bracket = int(np.clip(round(self._rng.gauss(3.0, 1.0)), 1, 5))
 
@@ -207,8 +209,10 @@ class MesaSimEngine:
             net = self.model.network
 
             if ev.type == EventType.weather:
-                net.weather_rain_intensity = float(p.get("rain_intensity", net.weather_rain_intensity))
-            
+                net.weather_rain_intensity = float(
+                    p.get("rain_intensity", net.weather_rain_intensity)
+                )
+
             elif ev.type == EventType.policy:
                 if "bus_capacity_pct" in p:
                     net.bus_capacity_multiplier = float(p["bus_capacity_pct"])
@@ -233,12 +237,22 @@ class MesaSimEngine:
 
         # Initialize grid structures
         cells = []
-        grid_data = [[{"density": 0, "congestion_sum": 0.0, "road_count": 0} for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
+        grid_data = [
+            [
+                {"density": 0, "congestion_sum": 0.0, "road_count": 0}
+                for _ in range(GRID_COLS)
+            ]
+            for _ in range(GRID_ROWS)
+        ]
 
         # 1. Map agent physical locations to grid bins
         for agent in self.model.schedule.agents:
-            node_id = agent.current_route[agent.route_index] if (agent.state == "COMMUTING" and agent.current_route) else agent.home_node
-            
+            node_id = (
+                agent.current_route[agent.route_index]
+                if (agent.state == "COMMUTING" and agent.current_route)
+                else agent.home_node
+            )
+
             # Retrieve node coordinates
             node_data = self.model.network.g.nodes[node_id]
             lat, lon = node_data["lat"], node_data["lon"]
@@ -269,8 +283,12 @@ class MesaSimEngine:
                 cell_lat = lat_start + r * 0.01
                 cell_lon = lon_start + c * 0.01
                 data = grid_data[r][c]
-                
-                avg_congestion = (data["congestion_sum"] / data["road_count"]) if data["road_count"] > 0 else 0.0
+
+                avg_congestion = (
+                    (data["congestion_sum"] / data["road_count"])
+                    if data["road_count"] > 0
+                    else 0.0
+                )
                 # Cap congestion between 0.0 and 1.0
                 avg_congestion = min(1.0, max(0.0, avg_congestion))
 
@@ -279,11 +297,13 @@ class MesaSimEngine:
                 if rain > 0:
                     avg_congestion = min(1.0, avg_congestion + 0.25 * rain)
 
-                cells.append(GridCell(
-                    lat=cell_lat,
-                    lon=cell_lon,
-                    density=data["density"],
-                    congestion=round(avg_congestion, 3)
-                ))
+                cells.append(
+                    GridCell(
+                        lat=cell_lat,
+                        lon=cell_lon,
+                        density=data["density"],
+                        congestion=round(avg_congestion, 3),
+                    )
+                )
 
         return cells
