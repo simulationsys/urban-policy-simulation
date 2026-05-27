@@ -1,0 +1,45 @@
+[project]
+name = "uip-agents"
+version = "0.0.1"
+description = "Urban Intelligence Platform — SUB-02 Agent Behavior module"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "black>=24.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["sim"]
+
+[tool.pytest.ini_options]
+testpaths = ["sim/tests"]
+pythonpath = ["."]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sim*"]
