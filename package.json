@@ -1,0 +1,15 @@
+{
+  "name": "urban-policy-simulation",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "install:all": "npm install --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "dev:backend": "cd backend && uvicorn app.main:app --reload",
+    "test:backend": "cd backend && pytest"
+  }
+}
