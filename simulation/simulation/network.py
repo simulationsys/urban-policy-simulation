@@ -46,11 +46,66 @@ class MultiModalNetwork:
         self.size = size
         self.spacing = spacing
 
-        # Track active policies & dynamic settings
-        self.disabled_metro_lines: set[str] = set()
-        self.bus_capacity_multiplier: float = 1.0
-        self.fuel_price_delta_paise: int = 0
-        self.weather_rain_intensity: float = 0.0
+        # High-performance routing cache: (source, target, mode) -> path
+        self._routing_cache: dict[tuple[str, str, str], list[str] | None] = {}
+
+        # Track active policies & dynamic settings internally
+        self._disabled_metro_lines: set[str] = set()
+        self._bus_capacity_multiplier: float = 1.0
+        self._fuel_price_delta_paise: int = 0
+        self._weather_rain_intensity: float = 0.0
+
+        # Build synthetic road intersections (Grid nodes)
+        self._build_road_nodes()
+        self._build_road_links()
+
+        # Build Transit lines (Metro Purple and Green, major Bus loops)
+        self._build_metro_system()
+        self._build_bus_system()
+
+    def clear_routing_cache(self) -> None:
+        """Clear the routing cache when network conditions or parameters change."""
+        self._routing_cache.clear()
+
+    @property
+    def disabled_metro_lines(self) -> set[str]:
+        return self._disabled_metro_lines
+
+    @disabled_metro_lines.setter
+    def disabled_metro_lines(self, value: set[str]) -> None:
+        self._disabled_metro_lines = value
+        self.clear_routing_cache()
+
+    @property
+    def bus_capacity_multiplier(self) -> float:
+        return self._bus_capacity_multiplier
+
+    @bus_capacity_multiplier.setter
+    def bus_capacity_multiplier(self, value: float) -> None:
+        if self._bus_capacity_multiplier != value:
+            self._bus_capacity_multiplier = value
+            self.clear_routing_cache()
+
+    @property
+    def fuel_price_delta_paise(self) -> int:
+        return self._fuel_price_delta_paise
+
+    @fuel_price_delta_paise.setter
+    def fuel_price_delta_paise(self, value: int) -> None:
+        if self._fuel_price_delta_paise != value:
+            self._fuel_price_delta_paise = value
+            self.clear_routing_cache()
+
+    @property
+    def weather_rain_intensity(self) -> float:
+        return self._weather_rain_intensity
+
+    @weather_rain_intensity.setter
+    def weather_rain_intensity(self, value: float) -> None:
+        if self._weather_rain_intensity != value:
+            self._weather_rain_intensity = value
+            self.clear_routing_cache()
+
 
         # Build synthetic road intersections (Grid nodes)
         self._build_road_nodes()
@@ -131,22 +186,60 @@ class MultiModalNetwork:
         self._wire_metro_line("green", green_nodes)
 
     def _wire_metro_line(self, line_name: str, nodes: list[str]) -> None:
-        """Create metro tracks between consecutive stations."""
-        for i in range(len(nodes) - 1):
-            n1, n2 = nodes[i], nodes[i+1]
+        """Create dedicated metro station nodes, walk-to-transit transfer links, and metro tracks."""
+        station_ids = []
+        for n in nodes:
+            lat = self.g.nodes[n]["lat"]
+            lon = self.g.nodes[n]["lon"]
+            station_id = f"metro_{line_name}_station_{n}"
+            station_ids.append(station_id)
             
-            # Metro stations are identical with road nodes for simple multimodal transferring
-            self.g.nodes[n1]["metro_station"] = True
-            self.g.nodes[n2]["metro_station"] = True
+            # Add dedicated metro station node
+            self.g.add_node(
+                station_id,
+                type="metro_station",
+                line=line_name,
+                lat=lat,
+                lon=lon
+            )
+            # Mark the physical road intersection as having transit access
+            self.g.nodes[n]["metro_station"] = True
 
-            # Add bidirectional metro links (separate from roads)
-            for src, dst in [(n1, n2), (n2, n1)]:
+            # Add bidirectional transfer edges (50-meter walking link to/from platforms)
+            self.g.add_edge(
+                n,
+                station_id,
+                type="transfer",
+                length=50.0,
+                capacity=1e9,
+                flow=0,
+                free_flow_speed=WALK_SPEED,
+                metro_line=None,
+                bus_route=None
+            )
+            self.g.add_edge(
+                station_id,
+                n,
+                type="transfer",
+                length=50.0,
+                capacity=1e9,
+                flow=0,
+                free_flow_speed=WALK_SPEED,
+                metro_line=None,
+                bus_route=None
+            )
+
+        # Wire metro tracks between consecutive stations
+        for i in range(len(station_ids) - 1):
+            s1, s2 = station_ids[i], station_ids[i+1]
+            
+            # Add bidirectional metro links (completely separate from road links)
+            for src, dst in [(s1, s2), (s2, s1)]:
                 # Physical length matching road segment
                 dx = (self.g.nodes[dst]["lon"] - self.g.nodes[src]["lon"]) * 111000 * math.cos(math.radians(CITY_LAT))
                 dy = (self.g.nodes[dst]["lat"] - self.g.nodes[src]["lat"]) * 111000
                 length = math.sqrt(dx*dx + dy*dy)
 
-                edge_id = f"metro_{line_name}_{src}_{dst}"
                 self.g.add_edge(
                     src,
                     dst,
@@ -159,6 +252,7 @@ class MultiModalNetwork:
                     metro_line=line_name,
                     bus_route=None
                 )
+
 
     def _build_bus_system(self) -> None:
         """Build major bus loop lines."""
@@ -219,7 +313,14 @@ class MultiModalNetwork:
             # Weather reduces lane capacity too by up to 30%
             cap = capacity * (1.0 - 0.30 * self.weather_rain_intensity)
             
-            congestion_term = 0.15 * ((flow / max(10.0, cap)) ** 4)
+            # Calibrated mixed-traffic BPR formula for Indian roads
+            # Mixed-traffic has lower threshold of speed degradation but standard exponential growth
+            # We use alpha = 0.20 and beta = 4.0 to make it slightly more sensitive to early traffic (mixed-traffic friction)
+            alpha = 0.20
+            beta = 4.0
+            congestion_term = alpha * ((flow / max(10.0, cap)) ** beta)
+            # Cap congestion multiplier to 9.0 to prevent infinite delay spikes
+            congestion_term = min(9.0, congestion_term)
             return t_zero * (1.0 + congestion_term)
 
         elif edge_type == "metro":
@@ -228,18 +329,27 @@ class MultiModalNetwork:
                 return 1e9  # impassable!
             return t_zero
 
+        elif edge_type == "transfer":
+            return length / WALK_SPEED
+
         elif edge_type == "bus":
             return t_zero
 
         return t_zero
 
+
     def find_shortest_path(self, source: str, target: str, mode: str) -> list[str] | None:
-        """Find the shortest path for a given mode of transport.
+        """Find the shortest path for a given mode of transport using the routing cache.
 
         Returns a list of node IDs or None.
         """
         if source == target:
             return [source]
+
+        # Check in high-performance cache
+        cache_key = (source, target, mode)
+        if cache_key in self._routing_cache:
+            return self._routing_cache[cache_key]
 
         # Define edge weight mapping based on the travel mode
         def weight_func(u: str, v: str, edge_attr: dict) -> float:
@@ -265,12 +375,14 @@ class MultiModalNetwork:
                 return self.compute_bpr_travel_time(u, v, edge_attr)
 
             elif mode == "metro":
-                # Metro routes can travel on metro links (fast) and walk along roads (slow) to transfer
+                # Metro routes can travel on metro links (fast), transfer walking edges, and walk along roads (slow) to transfer
                 if etype == "metro":
                     line = edge_attr["line"]
                     if line in self.disabled_metro_lines:
                         return 1e9
                     return edge_attr["length"] / METRO_SPEED
+                elif etype == "transfer":
+                    return edge_attr["length"] / WALK_SPEED
                 elif etype == "road":
                     # Walking to transfer
                     return edge_attr["length"] / WALK_SPEED
@@ -292,9 +404,12 @@ class MultiModalNetwork:
 
         try:
             path = nx.dijkstra_path(self.g, source, target, weight=weight_func)
+            self._routing_cache[cache_key] = path
             return path
         except (nx.NetworkXNoPath, nx.NodeNotFound):
+            self._routing_cache[cache_key] = None
             return None
+
 
     def calculate_path_travel_time(self, path: list[str], mode: str) -> float:
         """Sum travel times over a path for a specific mode."""
@@ -318,6 +433,8 @@ class MultiModalNetwork:
                 elif mode == "metro":
                     if etype == "metro":
                         t = edge_data["length"] / METRO_SPEED
+                    elif etype == "transfer":
+                        t = edge_data["length"] / WALK_SPEED
                     else:
                         t = edge_data["length"] / WALK_SPEED
                 elif mode == "bus":
@@ -334,8 +451,9 @@ class MultiModalNetwork:
                 total_time += 10.0
         return total_time / 60.0  # return minutes
 
+
     def update_road_congestion(self, active_commuters: list) -> None:
-        """Reset flow and count active agents on each road segment."""
+        """Reset flow and count active agents on each road segment, and invalidate the routing cache."""
         # Reset edge flows
         for u, v in self.g.edges:
             self.g.edges[u, v]["flow"] = 0
@@ -348,3 +466,7 @@ class MultiModalNetwork:
                 v = agent.current_route[idx + 1]
                 if self.g.has_edge(u, v) and self.g.edges[u, v]["type"] == "road":
                     self.g.edges[u, v]["flow"] += 1
+
+        # Clear routing cache as congestion and travel times have changed for the next tick
+        self.clear_routing_cache()
+

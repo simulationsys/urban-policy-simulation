@@ -1,0 +1,38 @@
+name: simulation-ci
+
+# Integration gate for SUB-01, SUB-02, and SUB-03. Keep this green to guarantee simulation core stability.
+on:
+  push:
+    branches: [main]
+    paths: ["simulation/**", ".github/workflows/simulation-ci.yml"]
+  pull_request:
+    paths: ["simulation/**", ".github/workflows/simulation-ci.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: simulation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          # Install ruff and black for static analysis checks
+          pip install ruff black
+
+      - name: Lint check (ruff)
+        run: ruff check .
+
+      - name: Format check (black)
+        run: black --check .
+
+      - name: Test (pytest)
+        run: python -m pytest -q
