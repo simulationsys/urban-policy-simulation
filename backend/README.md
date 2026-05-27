@@ -4,16 +4,24 @@ The REST + WebSocket layer of the Urban Intelligence Platform. It exposes simula
 dashboard, accepts policy events back, and manages scenario lifecycle. Owned by Person 5, who is
 also the **integration / DevOps owner**.
 
-- Role brief: [`docs/ROLE_5_BACKEND.md`](docs/ROLE_5_BACKEND.md)
-- Project spec: [`docs/PROJECT_SPEC (1).md`](<docs/PROJECT_SPEC (1).md>)
-- AI-agent guide for this folder: [`CLAUDE.md`](CLAUDE.md)/
-
-
-sarthak gaandu
+| | |
+|---|---|
+| **Role brief** | [`docs/ROLE_5_BACKEND.md`](docs/ROLE_5_BACKEND.md) |
+| **Project spec** | [`docs/PROJECT_SPEC (1).md`](<docs/PROJECT_SPEC (1).md>) |
+| **AI-agent guide for this folder** | [`CLAUDE.md`](CLAUDE.md) |
 
 > **v1 runs against a stub simulation** (`app/sim/fake_engine.py`) so the full data→sim→API→UI slice
 > works before SUB-01 lands. Swap in the real engine by implementing the `SimEngine` Protocol in
 > `app/sim/adapter.py` and setting `BACKEND_SIM_ENGINE=mesa`.
+
+## Contents
+
+- [Stack](#stack)
+- [Quickstart](#quickstart-local-no-docker)
+- [API surface (v1)](#api-surface-v1)
+- [Tests & lint](#tests--lint)
+- [Project layout](#project-layout)
+- [Deployment](#deployment--what-to-deploy-where-and-how)
 
 ## Stack
 
@@ -165,9 +173,9 @@ also injects `$PORT`.
 ## CI / integration (your DevOps hat)
 
 A GitHub Actions workflow lives at [`../.github/workflows/backend-ci.yml`](../.github/workflows/backend-ci.yml):
-on every PR touching `backend/` it runs **ruff + pytest**. Keep it green — red CI for >1 day and the
-team stops trusting it (ROLE_5 anti-pattern). The pytest WS test doubles as the daily smoke test;
-wire it to a scheduled run once the stack is deployed.
+on every PR touching `backend/` it runs **ruff + black + pytest**. Keep it green — red CI for >1 day
+and the team stops trusting it (ROLE_5 anti-pattern). The pytest WS test doubles as the daily smoke
+test; wire it to a scheduled run once the stack is deployed.
 
 **"Done" for deployment:** a teammate can go from clone to a running stack by following this section
 in under 30 minutes (ROLE_5 definition of done).
