@@ -6,6 +6,7 @@ from enum import Enum
 from sim.agents.memory import AgentMemory
 from sim.agents.modes import Mode
 from sim.agents.schedule import ActivitySchedule
+from sim.agents.utility_weights import UtilityWeights
 
 NodeID = int
 
@@ -32,6 +33,7 @@ class Agent:
     has_metro_pass: bool = False
     schedule: ActivitySchedule = field(default_factory=ActivitySchedule)
     memory: AgentMemory = field(default_factory=AgentMemory)
+    weights: UtilityWeights | None = None  # None → use model default
     current_state: AgentState = AgentState.AT_HOME
     current_mode: Mode | None = None
     current_route: list[NodeID] | None = None

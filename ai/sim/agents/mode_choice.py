@@ -12,15 +12,7 @@ import numpy as np
 
 from sim.agents.agent import Agent
 from sim.agents.modes import Mode
-
-
-@dataclass
-class UtilityWeights:
-    beta_time: float = -0.08       # per minute
-    beta_cost: float = -0.02       # per ₹ (scaled by income inside model)
-    beta_comfort: float = 0.5
-    beta_weather: float = -1.5
-    beta_habit: float = 0.4
+from sim.agents.utility_weights import UtilityWeights
 
 
 @dataclass
@@ -38,7 +30,7 @@ class ModeChoiceModel:
         self.rng = rng or np.random.default_rng()
 
     def utility(self, agent: Agent, alt: ModeAlternative) -> float:
-        w = self.w
+        w = agent.weights or self.w
         # Lower-income agents weight cost more heavily.
         cost_scale = (6 - agent.income_bracket) / 3.0
         habit = agent.memory.habit_bonus(alt.mode)
