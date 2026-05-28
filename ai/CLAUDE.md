@@ -1,0 +1,16 @@
+# CLAUDE.md — AI Subsystem
+
+Guidance for Claude Code (and any AI agent) working in the `ai/` directory of the Urban Policy Simulation. Read this before writing code here.
+
+> [!IMPORTANT]
+> **Git Branch Rule:** Pushing directly to the `main` branch is **STRICTLY PROHIBITED**.
+> All active development, commits, and pushes must go to the **`dev` branch only**.
+> Prior to executing any git commands or modifying files, you must load, read, and strictly adhere to `rule.md` in this directory.
+
+---
+
+## tech stack & Commands
+- **Language:** Python
+- **Environment:** virtualenv or conda configured inside `ai/`
+- **Linting & Formatting:** Ruff, Black
+- **Primary dependencies:** specified in `pyproject.toml`

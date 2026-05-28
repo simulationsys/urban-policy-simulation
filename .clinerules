@@ -1,0 +1,8 @@
+# Cline Rules - AI Agent System Directive
+
+All AI agents (including Cline, Roo-Code, Roo-Cline, Antigravity) working in this workspace must load, read, and strictly follow the Git branch rules specified in the `rule.md` files located in the root and in the subfolder where they are working.
+
+## 🚨 CRITICAL RULE: Branch Protection & Push Policy
+- **Push Destination:** You are ONLY allowed to commit/push changes to the `dev` branch.
+- **Main Branch Restriction:** Pushing directly to the `main` branch is **STRICTLY PROHIBITED**.
+- Before proposing or executing any git commands (like `git push`, `git commit`), verify that the current branch is `dev` or a feature branch off `dev`. If not, do NOT push to `main` under any circumstances. Switch to `dev` first.

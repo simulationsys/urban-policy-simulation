@@ -3,6 +3,11 @@
 Guidance for Claude Code (and any AI agent) working in the `backend/` directory of the
 Urban Intelligence Platform. Read this before writing code here.
 
+> [!IMPORTANT]
+> **Git Branch Rule:** Pushing directly to the `main` branch is **STRICTLY PROHIBITED**.
+> All active development, commits, and pushes must go to the **`dev` branch only**.
+> Prior to executing any git commands or modifying files, you must load, read, and strictly adhere to `rule.md` in this directory.
+
 > **Authority order (from PROJECT_SPEC §21):** `docs/PROJECT_SPEC (1).md` → `DECISIONS.md` →
 > subsystem READMEs → inline comments. If they conflict, the higher one wins — flag the conflict,
 > don't silently pick.
@@ -120,7 +125,7 @@ those shapes with SUB-01 (producer) and SUB-06 (consumer).
 
 - **API versioning:** all routes under `/api/v1`. WebSocket under `/ws`.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`).
-- **Branches:** `main` is always deployable. Feature branches → PR with ≥1 review. CI must be green.
+- **Branches:** Pushing directly to the `main` branch is **STRICTLY PROHIBITED**. All changes must be pushed to the `dev` branch only, as defined in `rule.md`. Merge requests from `dev` to `main` should occur through pull requests.
 - **IDs:** stable string IDs in serialized output (`scenario_0001`, `agent_00042`), not raw ints.
 - **Units on the wire:** times UTC in storage / IST in display (frontend formats); currency as
   integer **paise** internally, formatted ₹ for display; coords WGS84 lat/lon.

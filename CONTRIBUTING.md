@@ -4,8 +4,8 @@ Thanks for your interest in contributing to Urban Policy Simulation!
 
 ## Development Workflow
 
-1. **Fork & branch.** Create a feature branch off `main`:
-   `git checkout -b feat/short-description`.
+1. **Fork & branch.** Create a feature branch off `dev` (directly pushing to `main` is strictly prohibited, all work must target `dev` as defined in `rule.md`):
+   `git checkout -b feat/short-description dev`.
 2. **Set up the environment.** Copy `.env.example` to `.env` and run
    `docker-compose up --build`.
 3. **Make focused changes.** Keep pull requests scoped to a single concern.
