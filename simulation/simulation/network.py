@@ -9,9 +9,10 @@ import math
 from typing import TypedDict
 import networkx as nx
 
-# Central coordinates for Bengaluru-ish region
-CITY_LAT = 12.9716
-CITY_LON = 77.5946
+# Central coordinates — Rajiv Chowk Metro Station, New Delhi
+# Study area: ~3–5 km radius around this point
+CITY_LAT = 28.6328
+CITY_LON = 77.2197
 
 # Default travel speed constants (meters per second)
 WALK_SPEED = 1.4  # ~5 km/h
@@ -37,11 +38,11 @@ class MultiModalNetwork:
     updating dynamic travel times using a BPR congestion model.
     """
 
-    def __init__(self, size: int = 8, spacing: float = 0.01) -> None:
-        """Initialize the synthetic multi-modal Bengaluru grid.
+    def __init__(self, size: int = 10, spacing: float = 0.005) -> None:
+        """Initialize the synthetic multi-modal Delhi (Rajiv Chowk) grid.
 
-        size: grid size (e.g. 8x8 intersections)
-        spacing: coordinate distance between adjacent grid intersections (~1.1 km)
+        size: grid size (e.g. 10x10 intersections covering ~5 km)
+        spacing: coordinate distance between adjacent grid intersections (~555 m)
         """
         self.g = nx.DiGraph()
         self.size = size
@@ -56,11 +57,12 @@ class MultiModalNetwork:
         self._fuel_price_delta_paise: int = 0
         self._weather_rain_intensity: float = 0.0
 
+
         # Build synthetic road intersections (Grid nodes)
         self._build_road_nodes()
         self._build_road_links()
 
-        # Build Transit lines (Metro Purple and Green, major Bus loops)
+        # Build Transit lines (Delhi Metro Yellow and Blue lines, major bus routes)
         self._build_metro_system()
         self._build_bus_system()
 
@@ -106,14 +108,6 @@ class MultiModalNetwork:
         if self._weather_rain_intensity != value:
             self._weather_rain_intensity = value
             self.clear_routing_cache()
-
-        # Build synthetic road intersections (Grid nodes)
-        self._build_road_nodes()
-        self._build_road_links()
-
-        # Build Transit lines (Metro Purple and Green, major Bus loops)
-        self._build_metro_system()
-        self._build_bus_system()
 
     def _build_road_nodes(self) -> None:
         """Create road intersection nodes centered on the city."""
@@ -175,16 +169,21 @@ class MultiModalNetwork:
                     )
 
     def _build_metro_system(self) -> None:
-        """Create Purple and Green metro lines cutting through the grid."""
-        # Purple Line: Horizontal cut across the middle row
-        purple_r = self.size // 2
-        purple_nodes = [f"node_{purple_r}_{c}" for c in range(self.size)]
-        self._wire_metro_line("purple", purple_nodes)
+        """Create Delhi Metro Yellow and Blue lines cutting through the grid.
 
-        # Green Line: Vertical cut across the middle column
-        green_c = self.size // 2
-        green_nodes = [f"node_{r}_{green_c}" for r in range(self.size)]
-        self._wire_metro_line("green", green_nodes)
+        Yellow Line runs north-south through Rajiv Chowk (vertical cut).
+        Blue Line runs east-west through Rajiv Chowk (horizontal cut).
+        Both lines intersect at Rajiv Chowk station (center of grid).
+        """
+        # Yellow Line: Vertical (north-south) cut through the center column
+        yellow_c = self.size // 2
+        yellow_nodes = [f"node_{r}_{yellow_c}" for r in range(self.size)]
+        self._wire_metro_line("yellow", yellow_nodes)
+
+        # Blue Line: Horizontal (east-west) cut across the center row
+        blue_r = self.size // 2
+        blue_nodes = [f"node_{blue_r}_{c}" for c in range(self.size)]
+        self._wire_metro_line("blue", blue_nodes)
 
     def _wire_metro_line(self, line_name: str, nodes: list[str]) -> None:
         """Create dedicated metro station nodes, walk-to-transit transfer links, and metro tracks."""
@@ -255,34 +254,38 @@ class MultiModalNetwork:
                 )
 
     def _build_bus_system(self) -> None:
-        """Build major bus loop lines."""
-        # Bus loop around the inner square (e.g., ring road)
-        # For a size=8 grid, loop around index 2 and 5
-        bus_nodes = [
-            "node_2_2",
-            "node_2_3",
-            "node_2_4",
-            "node_2_5",
-            "node_3_5",
-            "node_4_5",
-            "node_5_5",
-            "node_5_4",
-            "node_5_3",
-            "node_5_2",
-            "node_4_2",
-            "node_3_2",
-            "node_2_2",
-        ]
+        """Build major DTC bus routes in the Connaught Place / Rajiv Chowk area."""
+        # Outer ring bus loop — represents routes circling the CP outer circle
+        # Dynamically compute indices based on grid size
+        inner = max(1, self.size // 4)
+        outer = min(self.size - 2, self.size - 1 - inner)
+
+        # Build a rectangular loop
+        bus_nodes = []
+        # Top edge (left to right)
+        for c in range(inner, outer + 1):
+            bus_nodes.append(f"node_{inner}_{c}")
+        # Right edge (top to bottom)
+        for r in range(inner + 1, outer + 1):
+            bus_nodes.append(f"node_{r}_{outer}")
+        # Bottom edge (right to left)
+        for c in range(outer - 1, inner - 1, -1):
+            bus_nodes.append(f"node_{outer}_{c}")
+        # Left edge (bottom to top, closing the loop)
+        for r in range(outer - 1, inner, -1):
+            bus_nodes.append(f"node_{r}_{inner}")
+        # Close the loop
+        bus_nodes.append(f"node_{inner}_{inner}")
 
         for i in range(len(bus_nodes) - 1):
             n1, n2 = bus_nodes[i], bus_nodes[i + 1]
             self.g.nodes[n1]["bus_stop"] = True
             self.g.nodes[n2]["bus_stop"] = True
 
-            # Add dynamic bus segment tag to existing road edges or new ones
+            # Tag existing road edges with bus route
             for src, dst in [(n1, n2), (n2, n1)]:
                 if self.g.has_edge(src, dst):
-                    self.g.edges[src, dst]["bus_route"] = "ring_road"
+                    self.g.edges[src, dst]["bus_route"] = "cp_outer_ring"
 
     def get_nearest_node(self, lat: float, lon: float) -> str:
         """Find the nearest road intersection node to a given lat/lon."""

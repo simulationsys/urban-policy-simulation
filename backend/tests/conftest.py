@@ -30,7 +30,7 @@ def client(tmp_path) -> Iterator[TestClient]:
 def make_scenario(client: TestClient, name: str = "scenario_a_monsoon") -> dict:
     resp = client.post(
         "/api/v1/scenarios",
-        json={"config": {"name": name, "city": "bengaluru", "population": 1000, "seed": 7}},
+        json={"config": {"name": name, "city": "delhi", "population": 1000, "seed": 7}},
     )
     assert resp.status_code == 201, resp.text
     return resp.json()

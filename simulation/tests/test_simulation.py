@@ -43,7 +43,7 @@ def test_sim_engine_steps():
     assert engine.current_tick == 1
     assert snapshot.tick == 1
     assert snapshot.sim_time_minutes == 5
-    assert len(snapshot.grid) == 64  # 8x8 coarse grid
+    assert len(snapshot.grid) == 100  # 10x10 coarse grid
     assert snapshot.metrics.tick == 1
 
 
@@ -135,7 +135,7 @@ def test_shortest_path_cache_and_invalidation():
     net = model.network
 
     source = "node_0_0"
-    target = "node_5_5"
+    target = "node_7_7"
 
     # Check cache is initially empty
     assert len(net._routing_cache) == 0
@@ -170,17 +170,16 @@ def test_multimodal_routing_and_transfers():
     model = UrbanModel(config)
     net = model.network
 
-    # Query metro route along horizontal purple line (runs along row 4)
-    # Start near intersection node_4_0 and go to node_4_7
-    source = "node_4_0"
-    target = "node_4_7"
+    # Query metro route along the Blue Line (horizontal, runs along row 5 in 10x10 grid)
+    source = "node_5_0"
+    target = "node_5_9"
 
     path = net.find_shortest_path(source, target, "metro")
     assert path is not None
 
     # Path should include transfer node and metro station nodes, e.g.:
-    # node_4_0 -> metro_purple_station_node_4_0 -> ... -> metro_purple_station_node_4_7 -> node_4_7
-    assert any("metro_purple_station" in node for node in path)
+    # node_5_0 -> metro_blue_station_node_5_0 -> ... -> metro_blue_station_node_5_9 -> node_5_9
+    assert any("metro_blue_station" in node for node in path)
     assert any(
         net.g.edges[path[i], path[i + 1]]["type"] == "transfer"
         for i in range(len(path) - 1)

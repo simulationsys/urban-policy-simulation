@@ -8,7 +8,7 @@
 ## Overview
 
 This module handles all data acquisition, cleaning, and transformation pipelines
-for the Urban Intelligence Platform. The primary focus area is a **2 km radius
+for the Urban Intelligence Platform. The primary focus area is a **3–5 km radius
 around Rajiv Chowk Metro Station** (28.6328° N, 77.2197° E) in central New Delhi.
 
 ## Folder Structure
@@ -42,7 +42,7 @@ SUB-04_Data_Engineering/
 
 ### OpenStreetMap Network
 
-- **Query**: Point-based, 2 km radius around (28.6328, 77.2197)
+- **Query**: Point-based, 4 km radius around (28.6328, 77.2197) covering ~3–5 km study area
 - **Network type**: `drive` (drivable roads only)
 - **Cleaning**: Largest strongly-connected component retained
 - **Formats**: GraphML (for NetworkX), Parquet edge list (for pandas/geopandas)

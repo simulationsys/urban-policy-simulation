@@ -230,10 +230,10 @@ class MesaSimEngine:
         self._pending_events.clear()
 
     def _generate_grid_cells(self) -> list[GridCell]:
-        """Aggregate high-resolution agent locations into an 8x8 coarse visualization grid."""
-        GRID_ROWS, GRID_COLS = 8, 8
-        lat_start = CITY_LAT - (GRID_ROWS / 2) * 0.01
-        lon_start = CITY_LON - (GRID_COLS / 2) * 0.01
+        """Aggregate high-resolution agent locations into a 10x10 coarse visualization grid."""
+        GRID_ROWS, GRID_COLS = 10, 10
+        lat_start = CITY_LAT - (GRID_ROWS / 2) * 0.005
+        lon_start = CITY_LON - (GRID_COLS / 2) * 0.005
 
         # Initialize grid structures
         cells = []
@@ -257,8 +257,8 @@ class MesaSimEngine:
             node_data = self.model.network.g.nodes[node_id]
             lat, lon = node_data["lat"], node_data["lon"]
 
-            r = int(np.clip((lat - lat_start) / 0.01, 0, GRID_ROWS - 1))
-            c = int(np.clip((lon - lon_start) / 0.01, 0, GRID_COLS - 1))
+            r = int(np.clip((lat - lat_start) / 0.005, 0, GRID_ROWS - 1))
+            c = int(np.clip((lon - lon_start) / 0.005, 0, GRID_COLS - 1))
             grid_data[r][c]["density"] += 1
 
         # 2. Map road segment congestions to grid bins
@@ -267,8 +267,8 @@ class MesaSimEngine:
                 u_lat = self.model.network.g.nodes[u]["lat"]
                 u_lon = self.model.network.g.nodes[u]["lon"]
 
-                r = int(np.clip((u_lat - lat_start) / 0.01, 0, GRID_ROWS - 1))
-                c = int(np.clip((u_lon - lon_start) / 0.01, 0, GRID_COLS - 1))
+                r = int(np.clip((u_lat - lat_start) / 0.005, 0, GRID_ROWS - 1))
+                c = int(np.clip((u_lon - lon_start) / 0.005, 0, GRID_COLS - 1))
 
                 flow = edge_data.get("flow", 0)
                 capacity = edge_data.get("capacity", 100.0)
@@ -280,8 +280,8 @@ class MesaSimEngine:
         # 3. Build and return serializable GridCell list
         for r in range(GRID_ROWS):
             for c in range(GRID_COLS):
-                cell_lat = lat_start + r * 0.01
-                cell_lon = lon_start + c * 0.01
+                cell_lat = lat_start + r * 0.005
+                cell_lon = lon_start + c * 0.005
                 data = grid_data[r][c]
 
                 avg_congestion = (

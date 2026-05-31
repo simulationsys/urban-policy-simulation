@@ -3,7 +3,8 @@ Pipeline 1: Download OSM Drivable Street Network — Rajiv Chowk, New Delhi
 =========================================================================
 
 Downloads the drivable street network from OpenStreetMap centered on the
-Rajiv Chowk metro station (28.6328° N, 77.2197° E) with a 2 km radius.
+Rajiv Chowk metro station (28.6328° N, 77.2197° E) with a 4 km radius
+(covering ~3–5 km study area).
 
 The string query "Rajiv Chowk, New Delhi, India" can be ambiguous (it may
 refer to the intersection, the metro station, or the broader area), so we
@@ -30,7 +31,7 @@ import geopandas as gpd
 # Rajiv Chowk Metro Station coordinates (WGS-84)
 CENTER_LAT = 28.6328
 CENTER_LNG = 77.2197
-RADIUS_M = 3000  # 3 km radius
+RADIUS_M = 4000  # 4 km radius (~3-5 km study area)
 
 NETWORK_TYPE = "drive"  # drivable roads only
 
@@ -40,6 +41,7 @@ OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 GRAPHML_PATH = OUTPUT_DIR / "network.graphml"
 PARQUET_PATH = OUTPUT_DIR / "edges.parquet"
+NODES_PATH = OUTPUT_DIR / "nodes.parquet"
 
 
 def download_network(center_point: tuple, dist: int, network_type: str):
@@ -97,6 +99,31 @@ def save_parquet_edgelist(G, path: Path):
     print(f"       Written {size_mb:.2f} MB  ({len(gdf_edges)} edges)")
 
 
+def save_parquet_nodes(G, path: Path):
+    """Export node coordinates (id, lat, lon) as Parquet for downstream consumers.
+
+    The frontend needs these to place agents on a real map.
+    The population generator needs real node IDs.
+    The routing service needs them for distance calculations.
+    """
+    print(f"[5/5] Saving Parquet node list -> {path}")
+
+    gdf_nodes = ox.graph_to_gdfs(G, nodes=True, edges=False)
+
+    # Keep only the columns downstream systems need
+    # OSMnx node GeoDataFrame has 'x' (lon), 'y' (lat), 'street_count', 'geometry'
+    for col in gdf_nodes.columns:
+        if col == "geometry":
+            continue
+        if gdf_nodes[col].dtype == object:
+            gdf_nodes[col] = gdf_nodes[col].astype(str)
+
+    gdf_nodes.to_parquet(str(path), engine="pyarrow", index=True)
+    size_mb = path.stat().st_size / (1024 * 1024)
+    print(f"       Written {size_mb:.2f} MB  ({len(gdf_nodes)} nodes)")
+
+
+
 def main():
     # Ensure output directory exists
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -113,10 +140,14 @@ def main():
     # 4. Save Parquet edge list
     save_parquet_edgelist(G, PARQUET_PATH)
 
+    # 5. Save Parquet node list (coordinates)
+    save_parquet_nodes(G, NODES_PATH)
+
     # Summary
     print("\n[OK] Pipeline complete.")
     print(f"  GraphML : {GRAPHML_PATH}")
-    print(f"  Parquet : {PARQUET_PATH}")
+    print(f"  Edges   : {PARQUET_PATH}")
+    print(f"  Nodes   : {NODES_PATH}")
 
 
 if __name__ == "__main__":
