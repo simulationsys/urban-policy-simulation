@@ -28,9 +28,9 @@ from app.models.schemas import (
     Snapshot,
 )
 
-# Coarse map grid centered on the chosen city (placeholder — Bengaluru-ish).
-_GRID_ROWS, _GRID_COLS = 8, 8
-_CITY_CENTER = {"bengaluru": (12.9716, 77.5946)}
+# Coarse map grid centered on the chosen city — Delhi (Rajiv Chowk).
+_GRID_ROWS, _GRID_COLS = 10, 10
+_CITY_CENTER = {"delhi": (28.6328, 77.2197)}
 
 
 class FakeSimEngine:
@@ -49,7 +49,7 @@ class FakeSimEngine:
         self._disabled_metro_lines: set[str] = set()
 
         self._pending: list[Event] = []
-        clat, clon = _CITY_CENTER.get(config.city, (12.9716, 77.5946))
+        clat, clon = _CITY_CENTER.get(config.city, (28.6328, 77.2197))
         self._cells = [
             GridCell(lat=clat + (r - _GRID_ROWS / 2) * 0.01, lon=clon + (c - _GRID_COLS / 2) * 0.01)
             for r in range(_GRID_ROWS)

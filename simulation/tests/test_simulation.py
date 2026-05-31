@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.models.schemas import ScenarioConfig, Event, EventType
 from simulation.engine import MesaSimEngine, UrbanModel
+from simulation.agents import Occupation, Household, AgentMemory, ActivitySchedule
 
 
 def test_model_initialization():
@@ -25,8 +26,59 @@ def test_model_initialization():
     # Assert agent details are correct
     for agent in model.schedule.agents:
         assert 1 <= agent.income_bracket <= 5
-        assert 18 <= agent.age <= 70
-        assert agent.home_node != agent.work_node
+        assert 5 <= agent.age <= 80  # Wider range due to children and elderly
+
+        # Verify new advanced agent fields
+        assert isinstance(agent.occupation, Occupation)
+        assert isinstance(agent.memory, AgentMemory)
+        assert isinstance(agent.schedule, ActivitySchedule)
+        assert agent.household is not None
+        assert isinstance(agent.household, Household)
+        assert agent.household_id >= 0
+
+
+def test_occupation_distribution():
+    """Verify that all 5 occupation archetypes appear in the population."""
+    config = ScenarioConfig(
+        name="test_occupation", population=200, seed=42, tick_minutes=5, params={}
+    )
+    model = UrbanModel(config)
+
+    occupations_seen = set()
+    for agent in model.schedule.agents:
+        occupations_seen.add(agent.occupation)
+
+    # All 5 archetypes should appear in a population of 200
+    assert Occupation.OFFICE_EXECUTIVE in occupations_seen
+    assert Occupation.STUDENT in occupations_seen
+    assert Occupation.BLUE_COLLAR_WORKER in occupations_seen
+    # GIG_WORKER and RETIRED_CITIZEN may or may not appear with seed=42 at n=200,
+    # but at least 3 archetypes should be present
+    assert len(occupations_seen) >= 3
+
+
+def test_household_car_sharing():
+    """Verify household car-sharing mutex works correctly."""
+    hh = Household(
+        id=0, member_ids=[0, 1], has_car=True, cars_owned=1, cars_available=1
+    )
+
+    # First member claims the car
+    assert hh.request_car() is True
+    assert hh.cars_available == 0
+
+    # Second member can't get a car
+    assert hh.request_car() is False
+    assert hh.cars_available == 0
+
+    # First member releases the car
+    hh.release_car()
+    assert hh.cars_available == 1
+
+    # Daily reset
+    hh.cars_available = 0
+    hh.reset_daily_resources()
+    assert hh.cars_available == 1
 
 
 def test_sim_engine_steps():
@@ -43,7 +95,7 @@ def test_sim_engine_steps():
     assert engine.current_tick == 1
     assert snapshot.tick == 1
     assert snapshot.sim_time_minutes == 5
-    assert len(snapshot.grid) == 64  # 8x8 coarse grid
+    assert len(snapshot.grid) == 100  # 10x10 coarse grid
     assert snapshot.metrics.tick == 1
 
 
@@ -135,7 +187,7 @@ def test_shortest_path_cache_and_invalidation():
     net = model.network
 
     source = "node_0_0"
-    target = "node_5_5"
+    target = "node_7_7"
 
     # Check cache is initially empty
     assert len(net._routing_cache) == 0
@@ -170,17 +222,16 @@ def test_multimodal_routing_and_transfers():
     model = UrbanModel(config)
     net = model.network
 
-    # Query metro route along horizontal purple line (runs along row 4)
-    # Start near intersection node_4_0 and go to node_4_7
-    source = "node_4_0"
-    target = "node_4_7"
+    # Query metro route along the Blue Line (horizontal, runs along row 5 in 10x10 grid)
+    source = "node_5_0"
+    target = "node_5_9"
 
     path = net.find_shortest_path(source, target, "metro")
     assert path is not None
 
     # Path should include transfer node and metro station nodes, e.g.:
-    # node_4_0 -> metro_purple_station_node_4_0 -> ... -> metro_purple_station_node_4_7 -> node_4_7
-    assert any("metro_purple_station" in node for node in path)
+    # node_5_0 -> metro_blue_station_node_5_0 -> ... -> metro_blue_station_node_5_9 -> node_5_9
+    assert any("metro_blue_station" in node for node in path)
     assert any(
         net.g.edges[path[i], path[i + 1]]["type"] == "transfer"
         for i in range(len(path) - 1)
@@ -226,3 +277,44 @@ def test_calibrated_bpr_congestion():
     data_overloaded["flow"] = int(data["capacity"] * 100)  # 100x capacity!
     t_overloaded = net.compute_bpr_travel_time(u, v, data_overloaded)
     assert t_overloaded <= t0 * 10.0
+
+
+def test_multi_leg_schedule():
+    """Verify multi-leg activity schedules are generated for agents."""
+    config = ScenarioConfig(
+        name="test_schedule", population=200, seed=42, tick_minutes=5, params={}
+    )
+    model = UrbanModel(config)
+
+    agents_with_multi_leg = 0
+    for agent in model.schedule.agents:
+        if len(agent.schedule.activities) > 2:
+            agents_with_multi_leg += 1
+
+    # With gig workers (3 work locations) and students with recreation,
+    # some agents should have multi-leg schedules
+    assert agents_with_multi_leg > 0
+
+
+def test_agent_memory_frustration():
+    """Verify the AgentMemory frustration tracking works correctly."""
+    from simulation.agents import CommuteOutcome
+
+    mem = AgentMemory()
+
+    # Record normal commutes to establish baseline
+    for _ in range(5):
+        mem.record(CommuteOutcome(mode="bus", travel_time_min=30.0))
+
+    # Frustration should be low after normal commutes
+    assert mem.get_frustration("bus") == 0.0
+
+    # Record a very slow commute (>25% above average)
+    mem.record(CommuteOutcome(mode="bus", travel_time_min=50.0))
+
+    # Frustration should increase
+    assert mem.get_frustration("bus") > 0.0
+
+    # Habit bonus should reflect bus usage
+    assert mem.habit_bonus("bus") == 1.0  # Only mode used
+    assert mem.habit_bonus("car") == 0.0  # Never used

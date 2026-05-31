@@ -12,6 +12,7 @@ class ActivityType(str, Enum):
     RECREATION = "recreation"
     GIG_WORK = "gig_work"
     ESCORTING = "escorting"
+    VENDING = "vending"
 
 
 @dataclass

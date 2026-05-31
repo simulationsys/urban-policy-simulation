@@ -16,6 +16,9 @@ raw_data/*
 processed_data/*
 !processed_data/.gitkeep
 
+validation_data/*
+!validation_data/.gitkeep
+
 # Cache (e.g., osmnx cache)
 cache/
 .cache/
