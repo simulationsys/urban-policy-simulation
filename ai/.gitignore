@@ -17,3 +17,6 @@ data/processed/
 # editor
 .vscode/
 .idea/
+
+# generated documentation
+TEST_RESULTS_EXPLANATION.md

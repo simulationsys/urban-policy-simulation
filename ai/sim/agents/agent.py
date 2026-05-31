@@ -9,6 +9,11 @@ from sim.agents.modes import Mode, Occupation
 from sim.agents.schedule import ActivitySchedule, ActivityType
 from sim.agents.utility_weights import UtilityWeights
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sim.agents.shop_choice import ShoppingNeed
+
 NodeID = int
 
 
@@ -45,6 +50,9 @@ class Agent:
     activity_locations: dict[ActivityType, NodeID] = field(default_factory=dict)
     parent_id: int | None = None
     child_ids: list[int] = field(default_factory=list)
+
+    # Shopping extension — pending shopping needs for the ShopChoiceModel
+    shopping_needs: list[ShoppingNeed] = field(default_factory=list)
 
     def available_modes(self) -> list[Mode]:
         modes: list[Mode] = [Mode.WALK, Mode.BUS, Mode.METRO, Mode.AUTO]
