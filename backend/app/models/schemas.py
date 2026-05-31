@@ -52,7 +52,7 @@ class ScenarioConfig(BaseModel):
     """Inputs that, together with a seed, reproduce a run exactly."""
 
     name: str = Field(examples=["scenario_a_monsoon"])
-    city: str = Field(default="bengaluru", description="Chosen city; see PROJECT_SPEC §18.")
+    city: str = Field(default="delhi", description="Chosen city; see PROJECT_SPEC §18.")
     population: int = Field(default=10_000, ge=1, le=200_000)
     seed: int = Field(default=42, description="Single RNG seed for the whole run.")
     tick_minutes: int = Field(default=5, description="Simulated minutes per tick.")
@@ -92,7 +92,7 @@ class Event(BaseModel):
     # Examples:
     #   WEATHER_EVENT       -> {"rain_intensity": 0.8, "duration_ticks": 60}
     #   POLICY_EVENT        -> {"bus_capacity_pct": 1.2} or {"fuel_price_delta_paise": 2000}
-    #   INFRASTRUCTURE_EVENT-> {"disable_metro_line": "purple"}
+    #   INFRASTRUCTURE_EVENT-> {"disable_metro_line": "yellow"}
     payload: dict[str, float | int | str | bool]
 
 

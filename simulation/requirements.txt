@@ -1,0 +1,25 @@
+# Urban Intelligence Platform — Simulation Core (SUB-01 + SUB-03)
+# Python 3.12 required (osmnx has no wheels for 3.14)
+#
+# Install:
+#   py -3.12 -m venv venv
+#   venv\Scripts\activate
+#   pip install -r requirements.txt
+
+# === Core Simulation ===
+mesa>=2.2.0                 # Agent-based modeling framework
+numpy>=1.24.0               # Vectorized math for hot paths
+networkx>=3.2               # Graph data structures + Dijkstra routing
+pandas>=2.0.0               # Tabular data (metrics, population)
+
+# === Real Data Loading (Phase 1) ===
+osmnx>=1.9.0                # Load OSM GraphML road networks
+geopandas>=0.14             # GeoDataFrame for nodes/edges parquet
+pyarrow>=15.0               # Parquet I/O engine
+shapely>=2.0                # Geometric operations (node snapping)
+
+# === Dev Tools ===
+pytest>=8.0
+black>=24.0
+ruff>=0.5
+mypy>=1.10
