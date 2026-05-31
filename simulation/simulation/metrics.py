@@ -56,11 +56,12 @@ def calculate_metrics(model: UrbanModel) -> dict:
         }
 
     # 3. Average commute duration in minutes
-    # We look at all agents' memory buffers to see recent travel times
+    # We look at all agents' structured memory buffers to see recent travel times
     recent_durations = []
     for a in agents:
-        if a.memory:
-            recent_durations.append(a.memory[-1]["duration"])
+        last = a.memory.last_outcome
+        if last is not None:
+            recent_durations.append(last.travel_time_min)
 
     if recent_durations:
         avg_commute = float(np.mean(recent_durations))

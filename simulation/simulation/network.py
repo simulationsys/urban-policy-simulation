@@ -57,7 +57,6 @@ class MultiModalNetwork:
         self._fuel_price_delta_paise: int = 0
         self._weather_rain_intensity: float = 0.0
 
-
         # Build synthetic road intersections (Grid nodes)
         self._build_road_nodes()
         self._build_road_links()

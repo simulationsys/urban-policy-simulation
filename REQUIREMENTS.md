@@ -121,7 +121,7 @@
 
 #### File 7: `data/processed_data/synthetic_population.parquet`
 - **Format:** Parquet
-- **Content:** 10,000 agent records assigned to real OSM node IDs
+- **Content:** 5,000 agent records assigned to real OSM node IDs
 - **Schema I need:**
 ```
 agent_id          int64       unique

@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     # --- Metadata persistence (SQLite — NOT Postgres for v1, per PROJECT_SPEC §5.3) ---
     metadata_db_path: str = "data/backend_metadata.sqlite"
 
-    # Default synthetic population size for a new scenario (PROJECT_SPEC: start at 10k).
-    default_population: int = 10_000
+    # Default synthetic population size for a new scenario.
+    default_population: int = 5_000
 
     @property
     def cors_origin_list(self) -> list[str]:
