@@ -53,13 +53,32 @@ def main():
         has_car = random.random() < car_probs[income]
         has_bike = random.random() < bike_probs[income]
         
+        # New attributes
+        age = max(18, min(70, int(random.gauss(35, 12))))
+        
+        occupations = ["Corporate", "Service", "Student", "Labor", "Unemployed"]
+        occupation_weights = [0.30, 0.25, 0.20, 0.15, 0.10]
+        occupation = random.choices(occupations, weights=occupation_weights, k=1)[0]
+        
+        # Strongly correlate metro pass with Corporate/Student and higher income
+        metro_prob = 0.1
+        if occupation in ["Corporate", "Student"]:
+            metro_prob += 0.5
+        if income >= 4:
+            metro_prob += 0.3
+            
+        has_metro_pass = random.random() < min(1.0, metro_prob)
+        
         agents.append({
             'id': agent_id,
             'home_node': home_node,
             'work_node': work_node,
             'income_bracket': income,
             'has_car': has_car,
-            'has_bike': has_bike
+            'has_bike': has_bike,
+            'age': age,
+            'occupation': occupation,
+            'has_metro_pass': has_metro_pass
         })
 
     df = pd.DataFrame(agents)
