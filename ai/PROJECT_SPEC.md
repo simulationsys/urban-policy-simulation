@@ -259,21 +259,23 @@ Each subsystem has a primary owner, but pairs and cross-cuts are normal. Subsyst
 ### SUB-02: Agent Behavior Model
 
 **Owner:** Person 2 (paired with Person 1 during weeks 1–4)
-**Purpose:** Define how individual citizens make decisions.
+**Purpose:** Define how individual citizens, formal shops, and informal roadside stall owners make decisions.
 
 **Inputs:**
-- Agent personal attributes (income, home, work, household, transport access)
-- World state (time, weather, network conditions)
-- Personal memory (recent experiences)
+- Agent personal attributes (income, home, work, household, transport access, occupation, shopping needs)
+- World state (time, weather, network conditions, spatial foot traffic, municipal disruption events)
+- Personal and retail memory (recent commute experiences, sales revenue, customer footprints, and frustration metrics)
 
 **Outputs:**
-- Per-agent decisions: when to leave, which mode, which route, whether to cancel/defer
+- Per-agent decisions: when to leave, which mode, which route, whether to cancel/defer, where to shop (formal vs. informal), and whether to relocate retail operations.
 
 **Key responsibilities:**
 - Implement the **utility function** for mode choice (see section 7)
-- Implement **daily activity schedules** (when does the agent leave home, return)
+- Implement the **venue choice model** (shop choice) using Multinomial Logit utility scoring (see section 7)
+- Implement **daily activity schedules** (home, work, gig work, vending, shopping)
 - Implement **memory and adaptation**: agents update preferences based on outcomes
-- Tune utility weights to produce realistic mode shares
+- Implement **micro-economic behaviors**: informal roadside stalls (relocation, product decay, disruption) and formal stores (manager restocking and shift scheduling, staff tardiness frustration)
+- Tune utility weights to produce realistic mode shares and retail choice divisions
 
 **Tech:** Python, NumPy. Optional later: scikit-learn for fitting discrete choice models against survey data.
 
@@ -414,19 +416,26 @@ Every agent carries the following state:
 @dataclass
 class Agent:
     id: int
-    home_node: NodeID         # location in road network
-    work_node: NodeID | None  # None for non-workers
-    income_bracket: int       # 1-5 (low to high)
+    home_node: NodeID                   # location in road network
+    work_node: NodeID | None            # None for non-workers
+    income_bracket: int                 # 1-5 (low to high)
     age: int
     household_id: int
+    occupation: Occupation              # OFFICE_EXECUTIVE, STUDENT, STALL_OWNER, etc.
     has_car: bool
     has_bike: bool
     has_metro_pass: bool
-    schedule: ActivitySchedule  # when they typically move
-    memory: AgentMemory         # recent commute experiences
-    current_state: AgentState   # AT_HOME | COMMUTING | AT_WORK | etc.
+    schedule: ActivitySchedule            # when they typically move (multi-leg)
+    memory: AgentMemory                   # recent commute experiences
+    weights: UtilityWeights | None        # None -> use model default
+    current_state: AgentState             # AT_HOME | COMMUTING | AT_WORK | etc.
     current_mode: Mode | None
     current_route: list[NodeID] | None
+    household: Household | None
+    activity_locations: dict[ActivityType, NodeID]  # spatial mapping of activities
+    parent_id: int | None
+    child_ids: list[int]
+    shopping_needs: list[ShoppingNeed]   # active shopping needs for discrete choice
 ```
 
 ### 7.2 Decision function (mode choice)
@@ -435,7 +444,7 @@ Agents choose among available modes using a **utility function**. This is a stan
 
 ```
 U(mode) = β_time * travel_time
-       + β_cost * monetary_cost
+       + β_cost * monetary_cost * income_scale
        + β_comfort * comfort_score
        + β_weather * weather_penalty
        + β_habit * habit_bonus
@@ -473,6 +482,66 @@ Agents do not learn via gradient descent. They learn via simple bookkeeping:
 - Update the `habit_bonus` weight based on this
 
 This is enough to produce visible behavior change over a multi-week sim run, without any neural network training.
+
+### 7.5 Informal Retail Agents (Roadside Stalls)
+
+Informal vendors operate roadside stalls without fixed leases. They are modeled as active economic agents:
+
+- **Classes:** Base `StallOwner` and subclasses:
+  - `FoodStallOwner` (quick eats, high perishable inventory decay rate of 0.15/day, 5% daily disruption probability).
+  - `ClothesStallOwner` (slower sales, low inventory decay rate of 0.02/day, 8% daily disruption probability).
+  - `AccessoriesStallOwner` (low inventory decay rate of 0.01/day, 6% daily disruption probability).
+- **Economic Attributes:**
+  - `price`: set dynamically based on product type.
+  - `inventory`: loaded during restock, decays daily depending on product perishability.
+  - `base_revenue_need`: target daily sales needed to cover costs.
+- **Frustration-Driven Relocation Model:**
+  - Retailers track daily sales in `RetailMemory`. If daily revenue falls below 70% of expectations, frustration increments by `+1.0` (clamped to `[0.0, 5.0]`).
+  - If sales are healthy, a cooling factor of `-0.3` reduces frustration.
+  - If frustration exceeds the threshold (`2.0`), a relocation event is triggered. The agent scans neighboring nodes for spatial foot traffic and relocates to the highest-utility node.
+- **Municipal/Weather Disruption:**
+  - Daily chance of eviction/clearance resets inventory to zero, forces the agent to cancel active schedules, and adds a `+1.5` frustration penalty.
+
+### 7.6 Formal Retail Agents (Stores)
+
+Formal brick-and-mortar shops operate at fixed spatial locations with managed staffs:
+
+- **Store Manager (`StoreManager`):**
+  - Conducts weekly restocking and controls pricing policies.
+  - Generates morning/evening shifts (`Shift` dataclass containing start, end, and location).
+  - Assigns shift schedules to employed staff.
+- **Store Staff (`StoreStaff`):**
+  - Commutes home-to-work based strictly on assigned shift hours.
+  - Tracks commute reliability. Delaying events (e.g. gridlock) that cause late arrivals increase their individual frustration metric.
+
+### 7.7 Citizen Shopper & Venue Choice Model
+
+Shoppers dynamically balance budget, travel time, and needs to decide where to shop:
+
+- **Activity Integration:** "Shopping" is modeled as a legitimate multi-leg journey activity (`ActivityType.SHOPPING` and `ActivityType.VENDING`).
+- **Shopper Needs:** Citizen agents accumulate `ShoppingNeed` items requiring specific product categories (e.g. food, clothing, accessories).
+- **Shop Choice Model (`ShopChoiceModel`):**
+  - Discrete Multinomial Logit choice selects between Formal Store vs. Roadside Stall:
+  ```
+  U(shop) = β_price * price * income_scale
+          + β_time * travel_time
+          + β_convenience * convenience_score
+          + β_need * need_alignment
+          + ε    (ε ~ Gumbel)
+  ```
+  - **Income Sensitivity:** Poor agents have high price sensitivity (low-income brackets have high `β_price`), whereas wealthy agents prioritize time and formal store convenience.
+
+### 7.8 Retail Memory & Transaction Dynamics
+
+Simulates the active trade between citizens and vendors:
+
+- **Retail Memory (`RetailMemory`):** Tracks rolling history of sales transactions, daily revenue totals, foot-traffic counts, and accumulated frustration.
+- **Purchase Interaction (`process_purchase`):**
+  - Resolves purchase events between Shoppers and Stall/Store sellers.
+  - If the shopper can afford the item and the vendor has sufficient inventory:
+    - Shopper's active need is satisfied (happiness/utility boost).
+    - Vendor gains sales revenue, updates `RetailMemory`, and decreases frustration.
+    - Inventory is depleted accordingly.
 
 ---
 

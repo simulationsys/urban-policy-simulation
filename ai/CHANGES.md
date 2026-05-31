@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-06-01 — Retail & Economic Agent Behavior Expansion
+
+### Summary
+Implemented a comprehensive economic and retail behavioral model under SUB-02 to simulate interactions between formal retail (shops), informal retail (roadside stalls), and citizen shoppers. The platform now supports multi-day retail micro-simulation, spatial foot traffic evaluations, perishable inventory decay, weather/eviction disruptions, and formal shift staffing with schedule synchronisation.
+
+### New components and files (new)
+| File | Purpose |
+|---|---|
+| [sim/agents/retail_memory.py](sim/agents/retail_memory.py) | `RetailMemory` tracking rolling daily sales outcomes, moving averages, and frustration metrics [0.0, 5.0]. |
+| [sim/agents/stall_owner.py](sim/agents/stall_owner.py) | `StallOwner` base and subclasses (`FoodStallOwner`, `ClothesStallOwner`, `AccessoriesStallOwner`) with foot-traffic based relocation, pricing, inventory decay, and disruption risks. |
+| [sim/agents/store_agents.py](sim/agents/store_agents.py) | `StoreManager` (inventory restocking, shift allocation) and `StoreStaff` (commute-bound schedule, late-arrival frustration). |
+| [sim/agents/shop_choice.py](sim/agents/shop_choice.py) | `ShopChoiceModel` (MNL discrete choice) for shopper agent destination choice (Formal vs. Informal) with Gumbel-max utility selection. |
+| [sim/agents/retail_interaction.py](sim/agents/retail_interaction.py) | Transaction processing engine `process_purchase` updating shopper utility and stall/store memory states dynamically. |
+| [sim/tests/test_retail_agents.py](sim/tests/test_retail_agents.py) | Comprehensive test suite containing 9 tests validating stall lifecycle, relocation, store manager shift logic, and purchase updates. |
+| [sim/scripts/demo_shopping.py](sim/scripts/demo_shopping.py) | Rich, interactive 5-part demo script simulating shoppers, stall relocation, shift delays, and purchase updates over multi-day iterations. |
+
+### Integrations and Modifications
+- **[sim/agents/modes.py](sim/agents/modes.py)** — Added `STALL_OWNER`, `STORE_MANAGER`, `STORE_STAFF` to `Occupation` enum.
+- **[sim/agents/schedule.py](sim/agents/schedule.py)** — Added `VENDING` activity type to `ActivityType` enum.
+- **[sim/agents/agent.py](sim/agents/agent.py)** — Added `shopping_needs` list to the base `Agent` model using lazy-loading import guards to avoid circular references.
+- **[sim/agents/__init__.py](sim/agents/__init__.py)** — Exposed all new classes and utility methods publicly.
+
+---
+
 ## 2026-05-27 — Initial scaffold
 
 ### Summary
