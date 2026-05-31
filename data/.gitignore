@@ -1,0 +1,28 @@
+# Virtual environments
+venv/
+env/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Data directories (keep the directories, ignore the contents)
+raw_data/*
+!raw_data/.gitkeep
+
+processed_data/*
+!processed_data/.gitkeep
+
+# Cache (e.g., osmnx cache)
+cache/
+.cache/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
