@@ -1,0 +1,52 @@
+[
+  {
+    "route_id": "route_1",
+    "route_name": "Mudrika Seva (Inner Ring Road)",
+    "stops": [
+      {"name": "New Delhi Railway Station Gate 2", "lat": 28.6415, "lon": 77.2220},
+      {"name": "Shivaji Stadium Terminal", "lat": 28.6300, "lon": 77.2120},
+      {"name": "Connaught Place (Palika Kendra)", "lat": 28.6290, "lon": 77.2170},
+      {"name": "Super Bazar", "lat": 28.6310, "lon": 77.2200}
+    ]
+  },
+  {
+    "route_id": "route_2",
+    "route_name": "Teevra Mudrika",
+    "stops": [
+      {"name": "Mandi House", "lat": 28.6260, "lon": 77.2340},
+      {"name": "Barakhamba Road", "lat": 28.6293, "lon": 77.2268},
+      {"name": "Connaught Place (Outer Circle)", "lat": 28.6328, "lon": 77.2197},
+      {"name": "Panchkuian Road", "lat": 28.6380, "lon": 77.2070}
+    ]
+  },
+  {
+    "route_id": "route_3",
+    "route_name": "Route 440",
+    "stops": [
+      {"name": "Kashmere Gate ISBT", "lat": 28.6670, "lon": 77.2290},
+      {"name": "Delhi Gate", "lat": 28.6390, "lon": 77.2400},
+      {"name": "Turkman Gate", "lat": 28.6380, "lon": 77.2340},
+      {"name": "Connaught Place", "lat": 28.6328, "lon": 77.2197}
+    ]
+  },
+  {
+    "route_id": "route_4",
+    "route_name": "Route 522",
+    "stops": [
+      {"name": "Ambedkar Nagar Terminal", "lat": 28.5200, "lon": 77.2300},
+      {"name": "AIIMS", "lat": 28.5670, "lon": 77.2090},
+      {"name": "Krishi Bhawan", "lat": 28.6140, "lon": 77.2100},
+      {"name": "Connaught Place", "lat": 28.6328, "lon": 77.2197}
+    ]
+  },
+  {
+    "route_id": "route_5",
+    "route_name": "Route 85",
+    "stops": [
+      {"name": "Anand Vihar ISBT", "lat": 28.6460, "lon": 77.3160},
+      {"name": "ITO", "lat": 28.6270, "lon": 77.2410},
+      {"name": "Mandi House", "lat": 28.6260, "lon": 77.2340},
+      {"name": "Connaught Place", "lat": 28.6328, "lon": 77.2197}
+    ]
+  }
+]

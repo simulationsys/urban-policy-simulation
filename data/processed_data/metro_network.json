@@ -1,0 +1,60 @@
+{
+  "stations": [
+    {
+      "id": "rajiv_chowk",
+      "name": "Rajiv Chowk",
+      "lines": ["Yellow", "Blue"],
+      "coordinates": {"lat": 28.6328, "lon": 77.2197}
+    },
+    {
+      "id": "new_delhi",
+      "name": "New Delhi",
+      "lines": ["Yellow"],
+      "coordinates": {"lat": 28.6430, "lon": 77.2223}
+    },
+    {
+      "id": "patel_chowk",
+      "name": "Patel Chowk",
+      "lines": ["Yellow"],
+      "coordinates": {"lat": 28.6231, "lon": 77.2144}
+    },
+    {
+      "id": "barakhamba_road",
+      "name": "Barakhamba Road",
+      "lines": ["Blue"],
+      "coordinates": {"lat": 28.6293, "lon": 77.2268}
+    },
+    {
+      "id": "rk_ashram_marg",
+      "name": "RK Ashram Marg",
+      "lines": ["Blue"],
+      "coordinates": {"lat": 28.6385, "lon": 77.2078}
+    }
+  ],
+  "segments": [
+    {
+      "from": "new_delhi",
+      "to": "rajiv_chowk",
+      "line": "Yellow",
+      "travel_time_minutes": 3
+    },
+    {
+      "from": "rajiv_chowk",
+      "to": "patel_chowk",
+      "line": "Yellow",
+      "travel_time_minutes": 2
+    },
+    {
+      "from": "rk_ashram_marg",
+      "to": "rajiv_chowk",
+      "line": "Blue",
+      "travel_time_minutes": 3
+    },
+    {
+      "from": "rajiv_chowk",
+      "to": "barakhamba_road",
+      "line": "Blue",
+      "travel_time_minutes": 2
+    }
+  ]
+}
