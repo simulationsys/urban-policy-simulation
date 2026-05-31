@@ -11,7 +11,16 @@ import mesa
 import numpy as np
 
 from simulation.network import MultiModalNetwork, CITY_LAT, CITY_LON
-from simulation.agents import CitizenAgent
+from simulation.agents import (
+    CitizenAgent,
+    Occupation,
+    Household,
+    ActivityType,
+    Activity,
+    ActivitySchedule,
+    UtilityWeights,
+    ModeChoiceModel,
+)
 from simulation.metrics import calculate_metrics
 
 # Standard imports from the backend app schemas
@@ -24,6 +33,37 @@ from app.models.schemas import (
     Event,
     EventType,
 )
+
+# Vehicle-ownership probability by income bracket (1=lowest .. 5=highest).
+_P_BIKE_BY_INCOME = {1: 0.10, 2: 0.30, 3: 0.50, 4: 0.55, 5: 0.45}
+_P_METRO_PASS = 0.25
+
+
+def _pick_occupation(
+    options: list[Occupation],
+    probs: list[float],
+    rng: np.random.Generator,
+) -> Occupation:
+    """Sample an Occupation enum from a weighted list using numpy.
+
+    np.random.Generator.choice() corrupts enum objects into truncated np.str_
+    values, so we sample an integer index instead and use it to index the list.
+    """
+    idx = int(rng.choice(len(options), p=probs))
+    return options[idx]
+
+
+def _sample_weights(occupation: Occupation, rng: np.random.Generator) -> UtilityWeights:
+    """Per-agent weights = base archetype weights + Gaussian jitter."""
+    base = UtilityWeights.for_occupation(occupation)
+    jitter = lambda mu, sd: float(rng.normal(mu, sd))  # noqa: E731
+    return UtilityWeights(
+        beta_time=jitter(base.beta_time, 0.015),
+        beta_cost=jitter(base.beta_cost, 0.005),
+        beta_comfort=jitter(base.beta_comfort, 0.1),
+        beta_weather=jitter(base.beta_weather, 0.3),
+        beta_habit=jitter(base.beta_habit, 0.1),
+    )
 
 
 class SimpleScheduler:
@@ -54,6 +94,7 @@ class UrbanModel(mesa.Model):
 
         # Initialize seeded RNG
         self._rng = random.Random(config.seed)
+        self._np_rng = np.random.default_rng(config.seed)
         self.reset_random_system(config.seed)
 
         # 1. Physical spatial and multi-modal network
@@ -62,7 +103,10 @@ class UrbanModel(mesa.Model):
         # 2. Scheduler
         self.schedule = SimpleScheduler(self)
 
-        # 3. Dynamic metric tracking
+        # 3. Shared ModeChoiceModel (uses the seeded NumPy RNG)
+        self.mode_choice_model = ModeChoiceModel(rng=self._np_rng)
+
+        # 4. Dynamic metric tracking
         self.metrics = None
         # Setup empty initial metrics
         self.metrics = AggregateMetrics(
@@ -76,7 +120,13 @@ class UrbanModel(mesa.Model):
             agents_commuting=0,
         )
 
-        # 4. Generate Synthetic Population of Citizen Agents
+        # 5. Household registry for daily resource resets
+        self.households: dict[int, Household] = {}
+
+        # 6. Track the last simulated day for daily hooks
+        self._last_day = -1
+
+        # 7. Generate Synthetic Population of Citizen Agents
         self._generate_synthetic_population(config.population)
 
     def reset_random_system(self, seed: int) -> None:
@@ -85,7 +135,19 @@ class UrbanModel(mesa.Model):
         np.random.seed(seed)
 
     def _generate_synthetic_population(self, population_size: int) -> None:
-        """Create a diverse, demographic-typical population of commuting agents."""
+        """Create a diverse, demographic-typical population of commuting agents.
+
+        Port of SUB-02's build_population() adapted to use the simulation's
+        network nodes and Mesa agent system. Features:
+        - Household generation with Indian metro-area size distribution
+        - Per-household car ownership by income bracket
+        - Occupation assignment by family role (head, spouse, child, elderly)
+        - Multi-leg ActivitySchedule construction per occupation archetype
+        - Escort linkages (parent drops child at school)
+        - UtilityWeights with per-agent Gaussian jitter
+        """
+        rng = self._np_rng
+
         # Retrieve physical road nodes for home/work assignments
         intersection_nodes = [
             node_id
@@ -96,54 +158,320 @@ class UrbanModel(mesa.Model):
         if not intersection_nodes:
             raise ValueError("No road intersection nodes available in network.")
 
-        for i in range(population_size):
-            # Demographics
-            # Age: 18 to 70
-            age = self._rng.randint(18, 70)
+        n_nodes = len(intersection_nodes)
 
-            # Income Bracket: 1 to 5 (following bell curve)
-            income_bracket = int(np.clip(round(self._rng.gauss(3.0, 1.0)), 1, 5))
-
-            # Home and Work nodes (strictly different)
-            home_node = self._rng.choice(intersection_nodes)
-            work_nodes_pool = [n for n in intersection_nodes if n != home_node]
-            work_node = self._rng.choice(work_nodes_pool)
-
-            # Asset Ownership based on income bracket
-            # Bracket 1-2 (Low income): Walk, bike, bus dominant
-            # Bracket 3 (Middle income): Moderate car, high bike, high transit pass
-            # Bracket 4-5 (High income): Car/auto dominant
-            has_car = False
-            has_bike = False
-            has_metro_pass = False
-
-            if income_bracket in (1, 2):
-                has_bike = self._rng.random() < 0.60
-                has_metro_pass = self._rng.random() < 0.15
-            elif income_bracket == 3:
-                has_car = self._rng.random() < 0.40
-                has_bike = self._rng.random() < 0.40
-                has_metro_pass = self._rng.random() < 0.50
-            else:  # 4 and 5
-                has_car = self._rng.random() < 0.85
-                has_bike = self._rng.random() < 0.15
-                has_metro_pass = self._rng.random() < 0.20
-
-            agent = CitizenAgent(
-                unique_id=i,
-                model=self,
-                home_node=home_node,
-                work_node=work_node,
-                income_bracket=income_bracket,
-                age=age,
-                has_car=has_car,
-                has_bike=has_bike,
-                has_metro_pass=has_metro_pass,
+        # 1. Generate household size distribution
+        # Reflecting typical sizes in Indian metropolitan areas
+        hh_sizes: list[int] = []
+        while sum(hh_sizes) < population_size:
+            hh_sizes.append(
+                int(rng.choice([1, 2, 3, 4, 5], p=[0.15, 0.25, 0.25, 0.20, 0.15]))
             )
-            self.schedule.add(agent)
+
+        if sum(hh_sizes) > population_size:
+            hh_sizes[-1] -= sum(hh_sizes) - population_size
+            if hh_sizes[-1] <= 0:
+                hh_sizes.pop()
+
+        agent_id = 0
+        hh_id = 0
+
+        for size in hh_sizes:
+            # Sample household income bracket (1..5)
+            hh_income = int(
+                rng.choice(np.arange(1, 6), p=[0.20, 0.30, 0.25, 0.15, 0.10])
+            )
+
+            # Decide car capacity for household
+            if hh_income == 5:
+                cars_owned = int(rng.choice([0, 1, 2], p=[0.20, 0.60, 0.20]))
+            elif hh_income == 4:
+                cars_owned = int(rng.choice([0, 1], p=[0.50, 0.50]))
+            elif hh_income == 3:
+                cars_owned = int(rng.choice([0, 1], p=[0.80, 0.20]))
+            elif hh_income == 2:
+                cars_owned = int(rng.choice([0, 1], p=[0.92, 0.08]))
+            else:
+                cars_owned = int(rng.choice([0, 1], p=[0.98, 0.02]))
+
+            hh = Household(
+                id=hh_id,
+                member_ids=[],
+                has_car=(cars_owned > 0),
+                cars_owned=cars_owned,
+                cars_available=cars_owned,
+            )
+
+            hh_member_agents: list[CitizenAgent] = []
+
+            # 2. Build agents for this household
+            for member_idx in range(size):
+                # Determine relationship, age, and occupation
+                if size == 1:
+                    # Single individual
+                    age = int(rng.integers(21, 75))
+                    if age >= 60:
+                        occupation = Occupation.RETIRED_CITIZEN
+                    elif age < 25:
+                        occupation = Occupation.STUDENT
+                    else:
+                        occupation = _pick_occupation(
+                            [
+                                Occupation.OFFICE_EXECUTIVE,
+                                Occupation.BLUE_COLLAR_WORKER,
+                                Occupation.GIG_WORKER,
+                            ],
+                            [0.35, 0.40, 0.25],
+                            rng,
+                        )
+                else:
+                    # Family household
+                    if member_idx == 0:
+                        # Head of household (working age)
+                        age = int(rng.integers(25, 55))
+                        occupation = _pick_occupation(
+                            [
+                                Occupation.OFFICE_EXECUTIVE,
+                                Occupation.BLUE_COLLAR_WORKER,
+                                Occupation.GIG_WORKER,
+                            ],
+                            [0.35, 0.45, 0.20],
+                            rng,
+                        )
+                    elif member_idx == 1:
+                        # Spouse
+                        age = int(
+                            max(20, min(70, rng.normal(hh_member_agents[0].age, 3)))
+                        )
+                        occupation = _pick_occupation(
+                            [
+                                Occupation.OFFICE_EXECUTIVE,
+                                Occupation.BLUE_COLLAR_WORKER,
+                                Occupation.RETIRED_CITIZEN,
+                            ],
+                            [0.25, 0.35, 0.40],
+                            rng,
+                        )
+                    else:
+                        # Child or Elderly Parent
+                        is_elderly = rng.random() < 0.30
+                        if is_elderly:
+                            age = int(rng.integers(60, 80))
+                            occupation = Occupation.RETIRED_CITIZEN
+                        else:
+                            age = int(
+                                max(
+                                    5,
+                                    min(
+                                        24, rng.normal(hh_member_agents[0].age - 25, 5)
+                                    ),
+                                )
+                            )
+                            if age < 23:
+                                occupation = Occupation.STUDENT
+                            else:
+                                occupation = _pick_occupation(
+                                    [
+                                        Occupation.BLUE_COLLAR_WORKER,
+                                        Occupation.GIG_WORKER,
+                                    ],
+                                    [0.60, 0.40],
+                                    rng,
+                                )
+
+                # Income assignment
+                if occupation == Occupation.STUDENT:
+                    income = 1
+                elif occupation == Occupation.RETIRED_CITIZEN:
+                    income = max(1, hh_income - 1)
+                else:
+                    income = max(1, min(5, hh_income + int(rng.choice([-1, 0, 1]))))
+
+                # Node assignment — use real intersection node IDs
+                home_node = intersection_nodes[int(rng.integers(0, n_nodes))]
+                work_node = (
+                    intersection_nodes[int(rng.integers(0, n_nodes))]
+                    if occupation != Occupation.RETIRED_CITIZEN
+                    else None
+                )
+                # Ensure home != work
+                if work_node and work_node == home_node:
+                    pool = [n for n in intersection_nodes if n != home_node]
+                    work_node = pool[int(rng.integers(0, len(pool)))]
+
+                activity_locations: dict[ActivityType, str] = {
+                    ActivityType.HOME: home_node
+                }
+                if work_node is not None:
+                    activity_locations[ActivityType.WORK] = work_node
+
+                # Activity schedule generation per occupation archetype
+                activities: list[Activity] = [
+                    Activity(ActivityType.HOME, home_node, 0, 0)
+                ]
+
+                if occupation == Occupation.OFFICE_EXECUTIVE:
+                    leave_home = int(rng.normal(9 * 60, 30))  # 9:00 AM
+                    duration = int(rng.normal(9 * 60, 30))  # 9 hours
+                    activities.append(
+                        Activity(ActivityType.WORK, work_node, leave_home, duration)
+                    )
+                    activities[0].duration_min = leave_home
+
+                elif occupation == Occupation.STUDENT:
+                    school_node = intersection_nodes[int(rng.integers(0, n_nodes))]
+                    activity_locations[ActivityType.EDUCATION] = school_node
+                    leave_home = int(rng.normal(10 * 60, 45))  # 10:00 AM
+                    duration = int(rng.normal(5 * 60, 30))  # 5 hours
+                    activities.append(
+                        Activity(
+                            ActivityType.EDUCATION, school_node, leave_home, duration
+                        )
+                    )
+                    activities[0].duration_min = leave_home
+
+                    # 30% chance of evening recreation leg
+                    if rng.random() < 0.30:
+                        rec_node = intersection_nodes[int(rng.integers(0, n_nodes))]
+                        activity_locations[ActivityType.RECREATION] = rec_node
+                        rec_start = leave_home + duration + 30
+                        activities.append(
+                            Activity(ActivityType.RECREATION, rec_node, rec_start, 90)
+                        )
+
+                elif occupation == Occupation.BLUE_COLLAR_WORKER:
+                    leave_home = int(rng.normal(8 * 60, 15))  # 8:00 AM
+                    duration = int(rng.normal(9 * 60, 15))  # 9 hours
+                    activities.append(
+                        Activity(ActivityType.WORK, work_node, leave_home, duration)
+                    )
+                    activities[0].duration_min = leave_home
+
+                elif occupation == Occupation.GIG_WORKER:
+                    # Gig workers travel to 3 work locations
+                    node_a = intersection_nodes[int(rng.integers(0, n_nodes))]
+                    node_b = intersection_nodes[int(rng.integers(0, n_nodes))]
+                    node_c = intersection_nodes[int(rng.integers(0, n_nodes))]
+                    activity_locations[ActivityType.GIG_WORK] = node_a
+
+                    leave_home = int(rng.normal(11 * 60, 60))  # 11:00 AM
+                    activities.append(
+                        Activity(ActivityType.GIG_WORK, node_a, leave_home, 120)
+                    )
+                    activities.append(
+                        Activity(ActivityType.GIG_WORK, node_b, leave_home + 150, 120)
+                    )
+                    activities.append(
+                        Activity(ActivityType.GIG_WORK, node_c, leave_home + 300, 120)
+                    )
+                    activities[0].duration_min = leave_home
+
+                elif occupation == Occupation.RETIRED_CITIZEN:
+                    rec_node = intersection_nodes[int(rng.integers(0, n_nodes))]
+                    activity_locations[ActivityType.RECREATION] = rec_node
+                    leave_home = int(rng.normal(11 * 60, 45))  # 11:00 AM
+                    activities.append(
+                        Activity(ActivityType.RECREATION, rec_node, leave_home, 120)
+                    )
+                    activities[0].duration_min = leave_home
+
+                schedule = ActivitySchedule(
+                    activities=activities,
+                    leave_home_min=(
+                        activities[1].start_time_min if len(activities) > 1 else 9 * 60
+                    ),
+                )
+
+                # Vehicle availability rules
+                has_car = False
+                if hh.has_car and member_idx < 2:
+                    has_car = True
+
+                has_bike = bool(rng.random() < _P_BIKE_BY_INCOME[income])
+                if occupation == Occupation.GIG_WORKER:
+                    has_bike = True  # Gig workers almost always have a two-wheeler
+
+                agent = CitizenAgent(
+                    unique_id=agent_id,
+                    model=self,
+                    home_node=home_node,
+                    work_node=work_node,
+                    income_bracket=income,
+                    age=age,
+                    has_car=has_car,
+                    has_bike=has_bike,
+                    has_metro_pass=bool(rng.random() < _P_METRO_PASS),
+                    occupation=occupation,
+                    household_id=hh_id,
+                    household=hh,
+                    schedule=schedule,
+                    weights=_sample_weights(occupation, rng),
+                    activity_locations=activity_locations,
+                )
+
+                hh.member_ids.append(agent_id)
+                hh_member_agents.append(agent)
+                self.schedule.add(agent)
+                agent_id += 1
+
+            # 3. Establish School Escort runs within this household
+            parents = [
+                a
+                for a in hh_member_agents
+                if a.occupation
+                in {Occupation.OFFICE_EXECUTIVE, Occupation.BLUE_COLLAR_WORKER}
+            ]
+            children = [
+                a
+                for a in hh_member_agents
+                if a.occupation == Occupation.STUDENT and a.age < 15
+            ]
+
+            if parents and children:
+                parent = parents[0]
+                child = children[0]
+
+                # Establish escort linkage
+                parent.child_ids.append(child.unique_id)
+                child.parent_id = parent.unique_id
+
+                # Insert school drop-off leg into parent schedule
+                school_node = child.activity_locations.get(
+                    ActivityType.EDUCATION, child.home_node
+                )
+                parent_work_act = next(
+                    (
+                        act
+                        for act in parent.schedule.activities
+                        if act.activity_type == ActivityType.WORK
+                    ),
+                    None,
+                )
+
+                if parent_work_act:
+                    escort_start = parent_work_act.start_time_min - 30
+                    escort_act = Activity(
+                        ActivityType.ESCORTING, school_node, escort_start, 20
+                    )
+                    parent.schedule.activities.insert(1, escort_act)
+                    parent.schedule.activities[0].duration_min = escort_start
+                    parent.activity_locations[ActivityType.ESCORTING] = school_node
+
+            # Register household
+            self.households[hh_id] = hh
+            hh_id += 1
 
     def step(self) -> None:
         """Advance the Mesa model exactly one step."""
+        # 0. Daily hooks — reset household resources and adapt agent behavior
+        current_day = self.sim_time_minutes // (24 * 60)
+        if current_day > self._last_day:
+            self._last_day = current_day
+            for hh in self.households.values():
+                hh.reset_daily_resources()
+            for agent in self.schedule.agents:
+                agent.adapt_behavior()
+
         # 1. Step the scheduler (activates all agents)
         self.schedule.step()
 

@@ -48,7 +48,7 @@ uvicorn app.main:app --reload --port 8000
 # 1. Create a scenario
 curl -X POST http://localhost:8000/api/v1/scenarios \
   -H "content-type: application/json" \
-  -d '{"config":{"name":"scenario_a_monsoon","city":"delhi","population":10000,"seed":42}}'
+  -d '{"config":{"name":"scenario_a_monsoon","city":"delhi","population":5000,"seed":42}}'
 
 # 2. Start it  (use the id returned above, e.g. scenario_0001)
 curl -X POST http://localhost:8000/api/v1/scenarios/scenario_0001/start

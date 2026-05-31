@@ -53,7 +53,7 @@ class ScenarioConfig(BaseModel):
 
     name: str = Field(examples=["scenario_a_monsoon"])
     city: str = Field(default="delhi", description="Chosen city; see PROJECT_SPEC §18.")
-    population: int = Field(default=10_000, ge=1, le=200_000)
+    population: int = Field(default=5_000, ge=1, le=200_000)
     seed: int = Field(default=42, description="Single RNG seed for the whole run.")
     tick_minutes: int = Field(default=5, description="Simulated minutes per tick.")
     # Free-form initial policy/environment knobs (validated by the sim layer, not here).
