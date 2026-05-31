@@ -1,0 +1,7 @@
+{
+  "city": "delhi",
+  "bbox": [77.04, 28.40, 77.42, 28.88],
+  "population_size": 50000,
+  "random_seed": 42,
+  "output_format": "parquet"
+}
