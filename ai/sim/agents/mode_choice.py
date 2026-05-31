@@ -34,12 +34,14 @@ class ModeChoiceModel:
         # Lower-income agents weight cost more heavily.
         cost_scale = (6 - agent.income_bracket) / 3.0
         habit = agent.memory.habit_bonus(alt.mode)
+        frustration = agent.memory.get_frustration(alt.mode)
         return (
             w.beta_time * alt.travel_time_min
             + w.beta_cost * cost_scale * alt.monetary_cost
             + w.beta_comfort * alt.comfort_score
             + w.beta_weather * alt.weather_penalty
             + w.beta_habit * habit
+            - frustration * 0.8
         )
 
     def choose(self, agent: Agent, alts: list[ModeAlternative], stochastic: bool = True) -> Mode:
