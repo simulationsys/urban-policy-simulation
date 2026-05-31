@@ -92,8 +92,8 @@ def main():
     print("Generating synthetic population for Delhi...")
 
     try:
-        # Generate 5k households
-        n_households = 5000
+        # Generate ~1,429 households (~5,000 individuals at avg 3.5 members/household)
+        n_households = 1429
         df = generate_population(n_households)
 
         OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
