@@ -33,6 +33,8 @@ from sim.agents.bus_driver import BusDriver
 from sim.agents.metro_conductor import MetroConductor
 from sim.agents.traffic_police import TrafficPolice
 from sim.agents.drainage_worker import DrainageWorker
+from sim.agents.ride_hail import RideHailSurge
+from sim.agents.freight import FreightDriver, FreightOrder, FreightState
 
 __all__ = [
     "Agent",
@@ -73,4 +75,10 @@ __all__ = [
     "MetroConductor",
     "TrafficPolice",
     "DrainageWorker",
+    # Ride-hail surge pricing
+    "RideHailSurge",
+    # Freight logic
+    "FreightDriver",
+    "FreightOrder",
+    "FreightState",
 ]

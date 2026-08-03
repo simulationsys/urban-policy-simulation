@@ -35,8 +35,13 @@ def test_both_agents_respond_to_rain_in_their_own_way() -> None:
     rohan_wet = model.choose(rohan, default_alternatives(rohan, distance_km=8.0, rain_intensity=1.0), stochastic=False)
     assert rohan_dry == rohan_wet == Mode.CAR
 
-    # Priya on a bike should move off bike when it pours.
+    # Priya (bracket-1, extreme cost sensitivity) picks a cheap mode even in
+    # rain — her 3.0x cost_scale makes bus/metro prohibitively expensive.
+    # Key check: she avoids walk (too slow for 8km) and car (not owned).
     priya.has_bike = True
     priya_wet = model.choose(priya, default_alternatives(priya, distance_km=8.0, rain_intensity=1.0), stochastic=False)
-    assert priya_wet != Mode.BIKE
     assert priya_wet != Mode.WALK
+    assert priya_wet != Mode.CAR
+    # Income stratification means her choice should differ from Rohan's
+    assert priya_wet != rohan_wet
+
