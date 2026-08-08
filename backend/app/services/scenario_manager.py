@@ -134,7 +134,7 @@ class ScenarioManager:
         prev_cells: dict[tuple[float, float], float] = {}
         try:
             while True:
-                snap = engine.step()
+                snap = await asyncio.to_thread(engine.step)
                 snap.scenario_id = scenario_id
                 st.record(snap)
                 self._metadata.update_tick(scenario_id, snap.tick)
