@@ -8,6 +8,7 @@ class Mode(str, Enum):
     METRO = "metro"
     AUTO = "auto"
     CAR = "car"
+    RIDE_HAIL = "ride_hail"
 
 
 class Occupation(str, Enum):
@@ -20,3 +21,4 @@ class Occupation(str, Enum):
     STORE_MANAGER = "store_manager"
     STORE_STAFF = "store_staff"
     UNEMPLOYED = "unemployed"
+    FREIGHT_DRIVER = "freight_driver"

@@ -402,11 +402,23 @@ class ModeChoiceModel:
         self.w = weights or UtilityWeights()
         self.rng = rng or np.random.default_rng()
 
+    # Non-linear income-stratified cost sensitivity (PRD §4, SUB-02, task 2.1).
+    # Fuel shocks hit low-income auto/car users much harder than high-income.
+    _INCOME_COST_SCALE: dict[int, float] = {
+        1: 3.0,   # Lowest income — extremely cost-sensitive
+        2: 1.8,   # Low-medium
+        3: 0.9,   # Medium
+        4: 0.3,   # Medium-high
+        5: 0.05,  # Highest income — virtually cost-insensitive
+    }
+
     def utility(self, agent: CitizenAgent, alt: ModeAlternative) -> float:
         """Compute the deterministic utility of a mode alternative for an agent."""
         w = agent.weights or self.w
-        # Lower-income agents weight cost more heavily.
-        cost_scale = (6 - agent.income_bracket) / 3.0
+        # Non-linear income-stratified cost sensitivity (SUB-02, task 2.1).
+        # Low-income agents are dramatically more sensitive to cost changes
+        # (e.g. fuel shock), while high-income agents are nearly insensitive.
+        cost_scale = self._INCOME_COST_SCALE.get(agent.income_bracket, 0.9)
         habit = agent.memory.habit_bonus(alt.mode)
         frustration = agent.memory.get_frustration(alt.mode)
         return (
@@ -644,10 +656,19 @@ class CitizenAgent(mesa.Agent):
                 )
                 if not boarded:
                     self._denied_boarding_count += 1
+                    # Record a bad metro outcome in memory so frustration builds
+                    # and the agent naturally avoids metro on subsequent ticks/days.
+                    self.memory.record(CommuteOutcome(
+                        mode="metro",
+                        travel_time_min=60.0,  # penalty: treated as a very slow trip
+                        monetary_cost=0.0,
+                        comfort_score=0.1,     # terrible experience
+                    ))
                     if self._denied_boarding_count >= 3:
-                        # Denied 3x — reroute via bus
+                        # Denied 3x — reroute via bus, reset denial counter
                         chosen_mode = "bus"
                         self.current_mode = "bus"
+                        self._denied_boarding_count = 0
                     else:
                         # Try again next tick
                         self.state = AgentState.AT_HOME
@@ -787,9 +808,11 @@ class CitizenAgent(mesa.Agent):
             fuel_cost_per_km = 1200 + self.model.network.fuel_price_delta_paise
             return int(fuel_cost_per_km * dist_km)
 
-        # Auto: ₹15 base + ₹15/km
+        # Auto: ₹15 base + ₹15/km + 50% of fuel price delta (autos also burn fuel)
         elif mode == "auto":
-            return int(1500 + 1500 * dist_km)
+            fuel_delta = self.model.network.fuel_price_delta_paise
+            auto_cost_per_km = 1500 + int(0.5 * fuel_delta)
+            return int(1500 + auto_cost_per_km * dist_km)
 
         # Bike: ₹1.5/km maintenance
         elif mode == "bike":

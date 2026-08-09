@@ -69,7 +69,7 @@ class Agent:
         return len(non_home_activities) >= 2
 
     def available_modes(self) -> list[Mode]:
-        modes: list[Mode] = [Mode.WALK, Mode.BUS, Mode.METRO, Mode.AUTO]
+        modes: list[Mode] = [Mode.WALK, Mode.BUS, Mode.METRO, Mode.AUTO, Mode.RIDE_HAIL]
         if self.has_bike:
             modes.append(Mode.BIKE)
         if self.has_car:
