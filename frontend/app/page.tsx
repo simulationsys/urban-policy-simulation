@@ -31,6 +31,45 @@ export default function Dashboard() {
   const isTimeManualRef = useRef(false);
   const [activeOverlay, setActiveOverlay] = useState("Road Network");
 
+  // Focus-cohort agents streamed by the engine, keyed by agent id.
+  const [liveAgents, setLiveAgents] = useState<any[]>([]);
+  const legsRef = useRef<Map<string, any>>(new Map());
+  // Lets the map interpolate simulated time between ticks instead of jumping.
+  const [simClock, setSimClock] = useState<{ minutes: number; receivedAt: number; minutesPerSecond: number } | null>(null);
+  const lastTickRef = useRef<{ minutes: number; at: number } | null>(null);
+  const simClockRateRef = useRef<number>(0);
+  // Whole-population density/congestion, keyed "lat,lon" and patched by each tick diff.
+  const [gridCells, setGridCells] = useState<any[]>([]);
+  const cellsRef = useRef<Record<string, any>>({});
+  // Citizens who are stationary (at home or arrived somewhere), and their homes.
+  const [presences, setPresences] = useState<any[]>([]);
+  const presenceRef = useRef<Record<string, any>>({});
+  const [dwellings, setDwellings] = useState<Record<string, any>>({});
+  const dwellingRef = useRef<Record<string, any>>({});
+
+  // Which engine the backend is actually running. If it is the stub, the map has no
+  // citizens to draw and falls back to canned routes — the user must be told, not shown
+  // looping demo traffic that looks like a simulation.
+  const [engineInfo, setEngineInfo] = useState<any>(null);
+  useEffect(() => {
+    fetch(`${API_BASE}/readyz`)
+      .then(res => res.json())
+      .then(setEngineInfo)
+      .catch(() => setEngineInfo(null));
+  }, []);
+
+  // Ticks seen since connecting, used to judge the backend by what it actually sends.
+  const [ticksSeen, setTicksSeen] = useState(0);
+
+  // Whether to warn that this is canned playback. An explicit flag from /readyz wins; an
+  // older backend does not report one, so fall back to ground truth — several ticks have
+  // arrived and not one citizen came with them.
+  const receivingCitizens =
+    liveAgents.length > 0 || presences.length > 0 || Object.keys(dwellings).length > 0;
+  const showDemoWarning =
+    engineInfo?.simulates_individuals === false ||
+    (!receivingCitizens && ticksSeen >= 5);
+
   // Connect to Backend and start Scenario
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/scenarios`)
@@ -38,16 +77,28 @@ export default function Dashboard() {
       .then(data => {
         if (data && data.length > 0) {
           // Find the pre-populated monsoon scenario or just take the first one
-          const target = data.find((s: any) => s.id.includes("scenario_a")) || data[0];
+          // Join a city that is already alive before starting a cold one: a fresh run
+          // begins before dawn, so reloading into a new scenario means watching an empty
+          // map until the morning peak arrives. Otherwise prefer a run on real streets.
+          const target =
+            data.find((s: any) => s.status === 'running' && s.config?.use_real_data) ||
+            data.find((s: any) => s.status === 'running') ||
+            data.find((s: any) => s.config?.use_real_data) ||
+            data.find((s: any) => s.id.includes("scenario_a")) ||
+            data[0];
           setScenarioId(target.id);
-          // Start the simulation if it isn't running
-          fetch(`${API_BASE}/api/v1/scenarios/${target.id}/start`, { method: 'POST' }).catch(() => {});
+          // Only start it if nothing is driving it already.
+          if (target.status !== 'running') {
+            fetch(`${API_BASE}/api/v1/scenarios/${target.id}/start`, { method: 'POST' }).catch(() => {});
+          }
         } else {
             // Create one if none exists
             fetch(`${API_BASE}/api/v1/scenarios`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ config: { name: "live_session", city: "delhi", population: 2000, seed: 42 } })
+                // 1,200 agents keeps a real-network rush-hour tick near ~2s; the full
+                // 5,000-agent population runs ~15s/tick and makes the map crawl.
+                body: JSON.stringify({ config: { name: "live_session", city: "delhi", population: 1200, seed: 42, use_real_data: true, start_time_minutes: 390 } })
             }).then(res => res.json()).then(target => {
                 setScenarioId(target.id);
                 fetch(`${API_BASE}/api/v1/scenarios/${target.id}/start`, { method: 'POST' });
@@ -67,6 +118,17 @@ export default function Dashboard() {
     let ws: WebSocket;
     let retryTimer: NodeJS.Timeout;
 
+    // Legs belong to one scenario's world; never carry them across a switch.
+    legsRef.current.clear();
+    setLiveAgents([]);
+    setTicksSeen(0);
+    cellsRef.current = {};
+    setGridCells([]);
+    presenceRef.current = {};
+    setPresences([]);
+    dwellingRef.current = {};
+    setDwellings({});
+
     const connect = () => {
       ws = new WebSocket(`${WS_BASE}/ws/scenarios/${scenarioId}`);
       wsRef.current = ws;
@@ -85,6 +147,49 @@ export default function Dashboard() {
           const totalMinutes = m.sim_time_minutes || 0;
           if (!isTimeManualRef.current) {
             setTimeOfDay((totalMinutes / 60) % 24 || 12);
+          }
+
+          // Derive how fast simulated time runs from the gap between ticks, rather
+          // than assuming the server's tick interval.
+          const now = Date.now();
+          const prev = lastTickRef.current;
+          let rate = simClockRateRef.current;
+          if (prev && totalMinutes > prev.minutes && now > prev.at) {
+            const observed = (totalMinutes - prev.minutes) / ((now - prev.at) / 1000);
+            // Smooth it: a single delayed frame should not lurch the animation.
+            rate = rate ? rate * 0.7 + observed * 0.3 : observed;
+            simClockRateRef.current = rate;
+          }
+          lastTickRef.current = { minutes: totalMinutes, at: now };
+          setTicksSeen(t => (t < 10 ? t + 1 : t));
+          setSimClock({ minutes: totalMinutes, receivedAt: now, minutesPerSecond: rate || 5 });
+
+          // Apply the leg diff: add legs that started, drop those that ended.
+          const legs = legsRef.current;
+          (data.diff.started_legs || []).forEach((leg: any) => legs.set(leg.agent_id, leg));
+          (data.diff.finished_agents || []).forEach((id: string) => legs.delete(id));
+          if ((data.diff.started_legs || []).length || (data.diff.finished_agents || []).length) {
+            setLiveAgents(Array.from(legs.values()));
+          }
+
+          // Stationary citizens. A leg starting means they left, so drop them from here.
+          const updatedPresences = data.diff.presences || [];
+          if (updatedPresences.length || (data.diff.started_legs || []).length) {
+            updatedPresences.forEach((p: any) => { presenceRef.current[p.agent_id] = p; });
+            (data.diff.started_legs || []).forEach((l: any) => { delete presenceRef.current[l.agent_id]; });
+            setPresences(Object.values(presenceRef.current));
+          }
+
+          const newHomes = data.diff.dwellings || {};
+          if (Object.keys(newHomes).length) {
+            dwellingRef.current = { ...dwellingRef.current, ...newHomes };
+            setDwellings(dwellingRef.current);
+          }
+
+          const changed = data.diff.changed_cells || [];
+          if (changed.length) {
+            changed.forEach((c: any) => { cellsRef.current[`${c.lat},${c.lon}`] = c; });
+            setGridCells(Object.values(cellsRef.current));
           }
         }
       };
@@ -144,6 +249,11 @@ export default function Dashboard() {
           busCapacity={busCapacity}
           timeOfDay={timeOfDay}
           activeOverlay={activeOverlay}
+          liveAgents={liveAgents}
+          simClock={simClock}
+          gridCells={gridCells}
+          presences={presences}
+          dwellings={dwellings}
         />
       </div>
 
@@ -174,13 +284,41 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="absolute top-6 right-6 z-[1000]">
+      <div className="absolute top-6 right-6 z-[1000] flex flex-col items-end gap-2">
         <div className="h-12 px-4 rounded-xl bg-slate-900/90 backdrop-blur-md border border-slate-700 flex items-center gap-3 shadow-lg">
           <div className={`animate-pulse w-2 h-2 rounded-full ${wsStatus === 'Live Connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
           <span className={`text-xs font-semibold uppercase tracking-widest ${wsStatus === 'Live Connected' ? 'text-emerald-500' : 'text-red-500'}`}>
             {wsStatus}
           </span>
         </div>
+
+        {/* Never let canned demo traffic pass for a simulated city. */}
+        {showDemoWarning && (
+          <div className="max-w-xs px-4 py-3 rounded-xl bg-amber-500/15 backdrop-blur-md border border-amber-500/40 shadow-lg">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400">
+              Demo playback — not simulated
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-amber-100/80">
+              The backend is running the stub engine, so no individual citizens exist. The
+              vehicles on the map are pre-recorded routes.
+            </p>
+            <p className="mt-1 text-[10px] leading-snug text-amber-200/60">
+              {engineInfo?.engine_reason ||
+                "This backend does not report an engine, and no citizens have arrived over the stream."}
+            </p>
+          </div>
+        )}
+        {engineInfo?.simulates_individuals && !engineInfo?.real_data && (
+          <div className="max-w-xs px-4 py-3 rounded-xl bg-sky-500/15 backdrop-blur-md border border-sky-500/40 shadow-lg">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-sky-300">
+              Synthetic street grid
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-sky-100/80">
+              Citizens are simulated, but on a placeholder grid — run the data pipelines to
+              route them along real Delhi streets.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="absolute bottom-6 left-6 z-[1000] w-80 p-6 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-2xl flex flex-col gap-6">
