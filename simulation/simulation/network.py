@@ -58,6 +58,53 @@ _HIGHWAY_CAPACITY: dict[str, tuple[float, float]] = {
 }
 _DEFAULT_CAPACITY = (300.0, CAR_FREE_FLOW_SPEED)
 
+METERS_PER_DEG_LAT = 111_139.0
+
+# Fastest speed each mode can ever travel, used only as an A* heuristic bound. Congestion,
+# rain and mode-mixing can only make a leg slower, so these stay admissible.
+_MAX_ROAD_FREE_FLOW = max(speed for _, speed in _HIGHWAY_CAPACITY.values())
+_MAX_SPEED_BY_MODE: dict[str, float] = {
+    "walk": WALK_SPEED,
+    "bike": BIKE_SPEED,
+    "bike_share": BIKE_SHARE_SPEED,
+    "bus": BUS_BASE_SPEED,
+    "metro": METRO_SPEED,
+    "car": _MAX_ROAD_FREE_FLOW,
+    "auto": _MAX_ROAD_FREE_FLOW,
+    "e_rickshaw": E_RICKSHAW_SPEED,
+}
+
+
+def _edge_shape(data: dict) -> list[tuple[float, float]]:
+    """Extract an OSM edge's real geometry as [(lat, lon), ...], or [] if it is straight.
+
+    osmnx gives a shapely LineString when the graph is loaded through it, and a WKT string
+    when read as plain GraphML — accept either. Coordinates are stored (lon, lat) in OSM
+    and flipped here to the (lat, lon) the rest of this codebase uses.
+    """
+    geometry = data.get("geometry")
+    if geometry is None:
+        return []
+
+    coords = getattr(geometry, "coords", None)
+    if coords is not None:
+        return [(float(y), float(x)) for x, y in coords]
+
+    # WKT fallback: "LINESTRING (lon lat, lon lat, ...)"
+    text = str(geometry)
+    if "(" not in text or ")" not in text:
+        return []
+    inner = text[text.index("(") + 1 : text.rindex(")")]
+    points: list[tuple[float, float]] = []
+    for part in inner.split(","):
+        bits = part.strip().split()
+        if len(bits) >= 2:
+            try:
+                points.append((float(bits[1]), float(bits[0])))
+            except ValueError:
+                return []
+    return points
+
 
 class SegmentInfo(TypedDict):
     length: float
@@ -152,6 +199,9 @@ class MultiModalNetwork:
 
         # High-performance routing cache: (source, target, mode) -> path
         self._routing_cache: dict[tuple[str, str, str], list[str] | None] = {}
+        # Congestion-sensitive routes, cleared every tick (see clear_dynamic_routing_cache).
+        self._dynamic_routing_cache: dict[tuple[str, str, str], list[str] | None] = {}
+        self._static_weight_modes_built: set[str] = set()
 
         # Track active policies & dynamic settings internally
         self._disabled_metro_lines: set[str] = set()
@@ -224,6 +274,8 @@ class MultiModalNetwork:
         net.spacing = 0.0
         net._is_real_data = True
         net._routing_cache = {}
+        net._dynamic_routing_cache = {}
+        net._static_weight_modes_built = set()
         net._disabled_metro_lines = set()
         net._bus_capacity_multiplier = 1.0
         net._fuel_price_delta_paise = 0
@@ -321,6 +373,11 @@ class MultiModalNetwork:
                 "metro_line": None,
                 "bus_route": None,
                 "highway": highway,
+                # The true shape of the street between these two intersections. Nearly half
+                # the edges here are curved (Connaught Place is literally concentric
+                # circles), and a straight chord between intersections drives through the
+                # buildings in between.
+                "shape": _edge_shape(data),
             }
 
         # Add the winning edges
@@ -490,6 +547,38 @@ class MultiModalNetwork:
     def clear_routing_cache(self) -> None:
         """Clear the routing cache when network conditions or parameters change."""
         self._routing_cache.clear()
+        self._dynamic_routing_cache.clear()
+
+    def clear_dynamic_routing_cache(self) -> None:
+        """Drop only routes whose cost depends on live traffic (car, auto, e-rickshaw).
+
+        Held in their own dict so this is O(1) — it runs every tick.
+        """
+        self._dynamic_routing_cache.clear()
+
+    # Modes whose edge cost never changes during a run. Rain scales bike costs by a single
+    # constant, which cannot reorder paths, so bikes count as static for *routing* — the
+    # travel time an agent actually experiences is computed separately.
+    _STATIC_WEIGHT_MODES = ("walk", "bike", "bike_share", "bus", "metro")
+
+    def _static_weight_attr(self, mode: str) -> str | None:
+        """Name of a precomputed edge attribute holding this mode's cost, if usable.
+
+        Routing with an attribute name lets NetworkX read a float straight off the edge
+        dict instead of calling back into Python for every edge it relaxes — which is where
+        rush-hour ticks were spending their time.
+        """
+        if mode not in self._STATIC_WEIGHT_MODES:
+            return None  # car/auto/e_rickshaw depend on live per-edge congestion
+        if mode == "metro" and self.disabled_metro_lines:
+            return None  # a shut line changes costs; fall back to the live function
+        attr = f"_w_{mode}"
+        if attr not in self._static_weight_modes_built:
+            weight_func = self.mode_weight_func(mode)
+            for u, v, data in self.g.edges(data=True):
+                data[attr] = weight_func(u, v, data)
+            self._static_weight_modes_built.add(attr)
+        return attr
 
     @property
     def disabled_metro_lines(self) -> set[str]:
@@ -804,22 +893,13 @@ class MultiModalNetwork:
     # Routing (unchanged)
     # ------------------------------------------------------------------
 
-    def find_shortest_path(
-        self, source: str, target: str, mode: str
-    ) -> list[str] | None:
-        """Find the shortest path for a given mode of transport using the routing cache.
+    def mode_weight_func(self, mode: str):
+        """Edge-cost function for one travel mode, in seconds.
 
-        Returns a list of node IDs or None.
+        Exposed (rather than nested in the router) so routing strategies and tests can be
+        compared against the exact same cost model.
         """
-        if source == target:
-            return [source]
 
-        # Check in high-performance cache
-        cache_key = (source, target, mode)
-        if cache_key in self._routing_cache:
-            return self._routing_cache[cache_key]
-
-        # Define edge weight mapping based on the travel mode
         def weight_func(u: str, v: str, edge_attr: dict) -> float:
             etype = edge_attr["type"]
 
@@ -891,12 +971,59 @@ class MultiModalNetwork:
 
             return 1e9
 
+        return weight_func
+
+    def find_shortest_path(
+        self, source: str, target: str, mode: str
+    ) -> list[str] | None:
+        """Find the shortest path for a given mode of transport using the routing cache.
+
+        Returns a list of node IDs or None.
+        """
+        if source == target:
+            return [source]
+
+        # Check in high-performance cache. Static-cost modes survive across ticks;
+        # congestion-sensitive ones are dropped whenever traffic flow is recomputed.
+        cache_key = (source, target, mode)
+        cache = (
+            self._routing_cache
+            if mode in self._STATIC_WEIGHT_MODES
+            else self._dynamic_routing_cache
+        )
+        if cache_key in cache:
+            return cache[cache_key]
+
+        weight_func = self._static_weight_attr(mode) or self.mode_weight_func(mode)
+
+        # A* rather than Dijkstra: the weight function runs in Python for every edge
+        # relaxed, so the win is in *not relaxing* most of the graph. The heuristic is
+        # straight-line distance divided by the fastest speed this mode can ever achieve,
+        # which can never overestimate the true cost, so the path stays optimal.
         try:
-            path = nx.dijkstra_path(self.g, source, target, weight=weight_func)
-            self._routing_cache[cache_key] = path
+            nodes = self.g.nodes
+            t_lat = nodes[target]["lat"]
+            t_lon = nodes[target]["lon"]
+        except KeyError:
+            cache[cache_key] = None
+            return None
+
+        best_speed = _MAX_SPEED_BY_MODE.get(mode, WALK_SPEED)
+
+        def heuristic(n: str, _target: str) -> float:
+            data = nodes[n]
+            dy = (data["lat"] - t_lat) * METERS_PER_DEG_LAT
+            dx = (data["lon"] - t_lon) * METERS_PER_DEG_LAT * math.cos(t_lat * math.pi / 180.0)
+            return math.sqrt(dx * dx + dy * dy) / best_speed
+
+        try:
+            path = nx.astar_path(
+                self.g, source, target, heuristic=heuristic, weight=weight_func
+            )
+            cache[cache_key] = path
             return path
         except (nx.NetworkXNoPath, nx.NodeNotFound):
-            self._routing_cache[cache_key] = None
+            cache[cache_key] = None
             return None
 
     def calculate_path_travel_time(self, path: list[str], mode: str) -> float:
@@ -969,8 +1096,11 @@ class MultiModalNetwork:
                 if self.g.has_edge(u, v) and self.g.edges[u, v]["type"] == "road":
                     self.g.edges[u, v]["flow"] += 1
 
-        # Clear routing cache as congestion and travel times have changed for the next tick
-        self.clear_routing_cache()
+        # Congestion changed, so congestion-sensitive routes must be recomputed next tick —
+        # but only those. Walk/bike/bus/metro costs do not depend on traffic flow, and
+        # dropping them every tick made the routing cache useless across ticks (it was the
+        # single biggest cost in a rush-hour tick).
+        self.clear_dynamic_routing_cache()
 
     # ------------------------------------------------------------------
     # Phase 2: DMRC Schedule Loading (SUB-03, task 3.1)
