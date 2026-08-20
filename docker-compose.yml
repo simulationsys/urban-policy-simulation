@@ -11,7 +11,11 @@ services:
       - backend
 
   backend:
-    build: ./backend
+    # Root context: the image bundles the simulation core and its processed street data,
+    # without which the backend can only run the stub engine.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     env_file:

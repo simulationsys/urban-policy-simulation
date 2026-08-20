@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.api.routes import events, health, metrics, scenarios, snapshots
 from app.config import get_settings
-from app.models.schemas import ScenarioConfig
+from app.models.schemas import ScenarioConfig, ScenarioStatus
 from app.services.scenario_manager import ScenarioManager
 from app.store.metadata import MetadataStore
 from app.store.state import StateStore
@@ -25,6 +25,7 @@ from app.ws import stream
 from app.ws.manager import ConnectionManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -41,41 +42,57 @@ async def lifespan(app: FastAPI):
     app.state.ws_manager = ws_manager
     app.state.scenario_manager = scenario_manager
 
-    # Auto-populate default scenarios if empty (allows frontend to connect immediately)
+    # Engines live in this process only, so a row still marked "running" from a previous
+    # boot is stale. Reconcile it to paused rather than letting clients believe a tick loop
+    # is alive (and re-start it behind the user's back).
     if settings.environment != "test":
+        for stale in metadata.list():
+            if stale.status is ScenarioStatus.running:
+                metadata.update_status(stale.id, ScenarioStatus.paused)
+                logger.info("Marked stale running scenario %s as paused on boot", stale.id)
+
+    # Auto-populate default scenarios if empty (allows frontend to connect immediately).
+    # They opt into real street data whenever it is present, otherwise every default run
+    # would sit on the synthetic grid and the map would show citizens cutting across blocks.
+    if settings.environment != "test":
+        real_data = settings.real_data_available()
         try:
             if not metadata.list():
-                scenario_manager.create(
-                    ScenarioConfig(
-                        name="scenario_a_monsoon",
-                        city="delhi",
-                        population=settings.default_population,
-                        seed=42,
+                for name in (
+                    "scenario_a_monsoon",
+                    "scenario_b_metro_shutdown",
+                    "scenario_c_fuel_shock",
+                ):
+                    scenario_manager.create(
+                        ScenarioConfig(
+                            name=name,
+                            city="delhi",
+                            population=settings.default_population,
+                            seed=42,
+                            use_real_data=real_data,
+                            # 06:30 — households are stirring and the peak is minutes away,
+                            # so the map has life the moment someone opens it.
+                            start_time_minutes=390,
+                        )
                     )
+                logger.info(
+                    "Pre-populated default scenarios (use_real_data=%s)", real_data
                 )
-                scenario_manager.create(
-                    ScenarioConfig(
-                        name="scenario_b_metro_shutdown",
-                        city="delhi",
-                        population=settings.default_population,
-                        seed=42,
-                    )
-                )
-                scenario_manager.create(
-                    ScenarioConfig(
-                        name="scenario_c_fuel_shock",
-                        city="delhi",
-                        population=settings.default_population,
-                        seed=42,
-                    )
-                )
-                logging.getLogger(__name__).info("Pre-populated default scenarios on startup")
         except Exception as e:
-            logging.getLogger(__name__).warning("Failed to pre-populate default scenarios: %s", e)
+            logger.warning("Failed to pre-populate default scenarios: %s", e)
 
-    logging.getLogger(__name__).info(
-        "Backend up: engine=%s, tick=%.2fs", settings.sim_engine, settings.tick_interval_seconds
+    engine_kind, engine_reason = settings.resolve_engine_kind()
+    logger.info(
+        "Backend up: engine=%s (%s), tick=%.2fs",
+        engine_kind,
+        engine_reason,
+        settings.tick_interval_seconds,
     )
+    if engine_kind == "fake":
+        logger.warning(
+            "Serving the STUB engine: metrics are analytic and no individual citizens are "
+            "simulated, so the map will fall back to canned demo routes."
+        )
     try:
         yield
     finally:
