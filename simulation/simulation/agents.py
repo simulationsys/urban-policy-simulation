@@ -149,6 +149,139 @@ class ActivitySchedule:
 
 
 @dataclass
+class Dwelling:
+    """Where a citizen lives, sized and named by what they can afford.
+
+    Income bracket 1..5 maps to the housing ladder found around central Delhi: a jhuggi
+    cluster shack, a chawl room, a walk-up flat, a serviced apartment, a bungalow. Floor
+    area and storeys are what the map needs to draw the building; ``rooms`` names what a
+    spectator should expect to find inside.
+    """
+
+    bracket: int
+    kind: str
+    area_sqm: float
+    storeys: int
+    rooms: tuple[str, ...]
+
+    @staticmethod
+    def for_income(bracket: int) -> "Dwelling":
+        return _DWELLINGS_BY_BRACKET.get(bracket, _DWELLINGS_BY_BRACKET[2])
+
+
+# Ladder of housing types, poorest first. Areas are typical carpet areas in m².
+_DWELLINGS_BY_BRACKET: dict[int, Dwelling] = {
+    1: Dwelling(1, "jhuggi", 14.0, 1, ("living space", "cooking corner")),
+    2: Dwelling(2, "chawl_room", 32.0, 2, ("main room", "kitchen", "shared washroom")),
+    3: Dwelling(3, "walkup_flat", 62.0, 3, ("living room", "bedroom", "kitchen", "bathroom")),
+    4: Dwelling(
+        4,
+        "apartment",
+        115.0,
+        6,
+        ("living room", "master bedroom", "second bedroom", "kitchen", "bathroom", "balcony"),
+    ),
+    5: Dwelling(
+        5,
+        "bungalow",
+        260.0,
+        2,
+        (
+            "drawing room",
+            "dining room",
+            "master bedroom",
+            "children's room",
+            "kitchen",
+            "bathroom",
+            "study",
+            "servant quarter",
+            "garden",
+        ),
+    ),
+}
+
+
+# What someone is doing while they are at home, by time of day. Each entry is
+# (start_minute, end_minute, label). Chores that only richer or poorer households do are
+# filtered separately in ``home_activity``.
+_HOME_ROUTINE: tuple[tuple[int, int, tuple[str, ...]], ...] = (
+    (0, 300, ("Asleep", "Asleep", "Awake with a restless child")),
+    (300, 360, ("Asleep", "Awake early, heating water", "Saying morning prayers")),
+    (360, 420, ("Making morning tea", "Bathing", "Ironing clothes for the day")),
+    (420, 480, ("Cooking breakfast", "Feeding the children", "Packing lunch tiffins")),
+    (480, 540, ("Eating breakfast with the family", "Reading the newspaper", "Cooking breakfast")),
+    (540, 600, ("Washing up after breakfast", "Hanging washing on the balcony", "Sweeping the doorway")),
+    (600, 720, ("Sweeping and mopping the floor", "Fixing a leaking tap", "Sorting the ration")),
+    (720, 780, ("Cooking lunch", "Kneading dough for rotis", "Cutting vegetables")),
+    (780, 840, ("Eating lunch", "Eating lunch", "Serving lunch to the family")),
+    (840, 960, ("Resting through the afternoon heat", "Napping", "Talking to a neighbour")),
+    (960, 1020, ("Washing clothes", "Scrubbing utensils", "Watering the plants")),
+    (1020, 1080, ("Evening tea and the newspaper", "Helping the children with homework", "Making pakoras")),
+    (1080, 1140, ("Buying vegetables from the cart outside", "Chatting at the gate", "Sweeping the courtyard")),
+    (1140, 1230, ("Cooking dinner", "Grinding masala", "Setting out the dinner plates")),
+    (1230, 1290, ("Eating dinner with the family", "Eating dinner", "Serving dinner")),
+    (1290, 1350, ("Washing the dishes", "Putting the children to bed", "Locking up for the night")),
+    (1350, 1410, ("Watching television", "On a phone call with relatives", "Reading before bed")),
+    (1410, 1440, ("Asleep", "Asleep", "Winding the clock and turning in")),
+)
+
+# Extra chores that only make sense for some households, keyed by what unlocks them.
+_STUDENT_CHORES = {"Watching television": "Studying for exams"}
+_WEALTHY_CHORES = {
+    "Sweeping and mopping the floor": "Supervising the house help",
+    "Washing clothes": "Sorting laundry for the press-wallah",
+}
+_POOR_CHORES = {
+    "Resting through the afternoon heat": "Fetching water from the shared tap",
+    "Watching television": "Listening to the radio",
+}
+
+
+# What a citizen is doing once they have arrived somewhere that is not home.
+_AWAY_ACTIVITY_LABEL: dict["ActivityType", str] = {
+    ActivityType.WORK: "At work",
+    ActivityType.EDUCATION: "In class",
+    ActivityType.SHOPPING: "Shopping at the market",
+    ActivityType.RECREATION: "Out with friends",
+    ActivityType.GIG_WORK: "On a gig job",
+    ActivityType.ESCORTING: "Dropping off family",
+    ActivityType.VENDING: "Minding the stall",
+    ActivityType.HOME: "At home",
+}
+
+
+def home_activity(
+    sim_time_minutes: int,
+    income_bracket: int,
+    occupation: "Occupation",
+    agent_id: int = 0,
+) -> str:
+    """What this citizen is doing at home right now.
+
+    Deterministic in the inputs, so two observers of the same run see the same thing.
+    ``agent_id`` shifts the routine by up to half an hour and selects between variants of
+    each chore, so a street full of homes isn't cooking dinner in unison.
+    """
+    phase = (agent_id * 37) % 61 - 30  # -30..+30 minutes
+    minute = (sim_time_minutes + phase) % (24 * 60)
+    variant = (agent_id * 17) % 3
+
+    label = "At home"
+    for start, end, variants in _HOME_ROUTINE:
+        if start <= minute < end:
+            label = variants[variant % len(variants)]
+            break
+
+    if occupation == Occupation.STUDENT:
+        label = _STUDENT_CHORES.get(label, label)
+    if income_bracket >= 4:
+        label = _WEALTHY_CHORES.get(label, label)
+    elif income_bracket <= 2:
+        label = _POOR_CHORES.get(label, label)
+    return label
+
+
+@dataclass
 class Household:
     """Represents a family or co-living unit sharing resources.
 
@@ -515,6 +648,9 @@ class CitizenAgent(mesa.Agent):
                     ),
                 ]
 
+        # Where this citizen lives, on the housing ladder their income affords.
+        self.dwelling = Dwelling.for_income(income_bracket)
+
         # Track which leg of the schedule we're on
         self._current_leg_index = 0
 
@@ -541,6 +677,22 @@ class CitizenAgent(mesa.Agent):
         # Shopping extension — pending shopping needs for the ShopChoiceModel
         self.shopping_needs: list[dict] = []
         self._shopped_today = False
+
+    def current_activity_label(self) -> str:
+        """A plain-language description of what this citizen is doing right now."""
+        if self.state == AgentState.AT_HOME:
+            return home_activity(
+                self.model.sim_time_minutes,
+                self.income_bracket,
+                self.occupation,
+                self.unique_id,
+            )
+        if self.state == AgentState.AT_WORK:
+            legs = self.schedule.get_legs()
+            idx = min(self._current_leg_index, len(legs) - 1) if legs else -1
+            activity = legs[idx][1].activity_type if idx >= 0 else ActivityType.WORK
+            return _AWAY_ACTIVITY_LABEL.get(activity, "At work")
+        return "Travelling"
 
     @property
     def morning_departure_time(self) -> float:

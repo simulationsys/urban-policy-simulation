@@ -7,6 +7,8 @@ satisfying the backend SimEngine Protocol.
 from __future__ import annotations
 
 import random
+from pathlib import Path
+
 import mesa
 import numpy as np
 
@@ -34,18 +36,79 @@ from simulation.metrics import calculate_metrics
 
 # Standard imports from the backend app schemas
 from app.models.schemas import (
+    AgentLeg,
+    AgentPresence,
+    Dwelling,
     Snapshot,
     GridCell,
     AggregateMetrics,
+    Mode,
     ScenarioStatus,
     ScenarioConfig,
     Event,
     EventType,
 )
 
+# How many agents the map may follow individually. The rest of the population reaches the
+# frontend only as aggregated grid cells (PROJECT_SPEC §16.1).
+FOCUS_COHORT_SIZE = 250
+# Cap on vertices per streamed leg, so one long route cannot blow up a frame. Roads are
+# followed vertex by vertex, so this has to be generous enough to hold the bends — it is a
+# ceiling for pathological routes, not a target.
+MAX_POLYLINE_POINTS = 400
+
+# Economic agents by class name -> the role the map draws them as.
+_ECONOMIC_ROLES = {
+    "MesaStallOwner": "stall_owner",
+    "MesaStoreManager": "store_manager",
+    "MesaStoreStaff": "store_staff",
+    "MesaDeliveryAgent": "delivery_rider",
+}
+
 # Vehicle-ownership probability by income bracket (1=lowest .. 5=highest).
 _P_BIKE_BY_INCOME = {1: 0.10, 2: 0.30, 3: 0.50, 4: 0.55, 5: 0.45}
 _P_METRO_PASS = 0.25
+
+
+def _sq_dist(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
+
+
+def _simplify(points: list[tuple[float, float]], limit: int) -> list[tuple[float, float]]:
+    """Trim a polyline to ``limit`` vertices while keeping its shape.
+
+    Sampling at even intervals is what makes a route cut corners — it is blind to which
+    vertices carry the bends. This drops the vertices that deviate least from the line
+    between their neighbours, so straight runs lose points and curves keep them.
+    """
+    if len(points) <= limit or limit < 3:
+        return points
+
+    def deviation(prev, cur, nxt) -> float:
+        # Twice the triangle area: how far `cur` sits off the prev->nxt chord.
+        return abs(
+            (nxt[0] - prev[0]) * (prev[1] - cur[1]) - (prev[0] - cur[0]) * (nxt[1] - prev[1])
+        )
+
+    kept = list(points)
+    while len(kept) > limit:
+        # Never drop the endpoints.
+        scores = [
+            (deviation(kept[i - 1], kept[i], kept[i + 1]), i) for i in range(1, len(kept) - 1)
+        ]
+        _, drop_at = min(scores)
+        kept.pop(drop_at)
+    return kept
+
+
+def _path_if_exists(path) -> str | None:
+    """Optional inputs (transit feeds) are skipped rather than crashing the run."""
+    return str(path) if path is not None and Path(path).exists() else None
+
+
+def _enum_value(value) -> str:
+    """Wire-friendly text for a plain ``(str, Enum)`` member ("student", not "Occupation.STUDENT")."""
+    return str(getattr(value, "value", value))
 
 
 def _pick_occupation(
@@ -99,7 +162,10 @@ class UrbanModel(mesa.Model):
         self.config = config
         self.data_paths = data_paths
         self.current_tick = 0
-        self.sim_time_minutes = 0
+        # A run may begin partway through the day so a viewer is not staring at a
+        # sleeping city; the clock is offset, the world still starts from tick 0.
+        self.start_time_minutes = int(getattr(config, "start_time_minutes", 0) or 0)
+        self.sim_time_minutes = self.start_time_minutes
         self.running = True
 
         # Initialize seeded RNG
@@ -107,14 +173,26 @@ class UrbanModel(mesa.Model):
         self._np_rng = np.random.default_rng(config.seed)
         self.reset_random_system(config.seed)
 
-        # 1. Physical spatial and multi-modal network
-        if getattr(config, "use_real_data", False) and config.network_paths.get(
-            "graphml"
-        ):
+        # 1. Physical spatial and multi-modal network.
+        # network_paths (set explicitly on the scenario) wins; otherwise fall back to the
+        # backend's resolved DataPaths, so `use_real_data: true` alone is enough to run on
+        # real streets instead of the synthetic lattice.
+        use_real = getattr(config, "use_real_data", False)
+        graphml = config.network_paths.get("graphml") or (
+            str(data_paths.road_network) if use_real and data_paths else None
+        )
+        metro_json = config.network_paths.get("metro_json") or (
+            _path_if_exists(data_paths.metro_network) if use_real and data_paths else None
+        )
+        bus_json = config.network_paths.get("bus_json") or (
+            _path_if_exists(data_paths.bus_routes) if use_real and data_paths else None
+        )
+
+        if use_real and graphml:
             self.network = MultiModalNetwork.load_from_osm(
-                graphml_path=config.network_paths["graphml"],
-                metro_json_path=config.network_paths.get("metro_json"),
-                bus_json_path=config.network_paths.get("bus_json"),
+                graphml_path=graphml,
+                metro_json_path=metro_json,
+                bus_json_path=bus_json,
             )
         else:
             self.network = MultiModalNetwork()
@@ -157,9 +235,12 @@ class UrbanModel(mesa.Model):
         # 8. Shared ShopChoiceModel
         self.shop_choice_model = ShopChoiceModel(rng=self._np_rng)
 
-        # 9. Generate or Load Population
-        if getattr(config, "use_real_data", False) and config.population_path:
-            self._load_real_population(config.population_path)
+        # 9. Generate or Load Population (same precedence as the network above).
+        population_path = config.population_path or (
+            _path_if_exists(data_paths.population) if use_real and data_paths else None
+        )
+        if use_real and population_path:
+            self._load_real_population(population_path)
         else:
             self._generate_synthetic_population(config.population)
 
@@ -182,6 +263,12 @@ class UrbanModel(mesa.Model):
 
         rng = self._np_rng
 
+        # The parquet holds the full synthetic population; a scenario may ask for fewer
+        # agents to stay inside the tick budget. Sample deterministically from the seed so
+        # a smaller run is still reproducible.
+        if 0 < self.config.population < len(df):
+            df = df.sample(n=self.config.population, random_state=self.config.seed)
+
         # Map string occupations to the enum
         occ_map = {
             "Corporate": Occupation.OFFICE_EXECUTIVE,
@@ -194,8 +281,28 @@ class UrbanModel(mesa.Model):
         agent_id = 0
         hh_id = 0
 
+        # The parquet holds OSM node ids captured when it was generated. Re-running the
+        # network pipeline (OSM changes daily, and the strongly-connected-component trim
+        # varies with it) can leave references to nodes this graph no longer has. Rather
+        # than crash deep in a tick, snap each stale reference to the nearest real node.
+        graph_nodes = self.network.g.nodes
+        node_pool = list(graph_nodes)
+        remapped = 0
+
+        def _valid_node(node_id: str | None) -> str | None:
+            nonlocal remapped
+            if node_id is None or node_id in graph_nodes:
+                return node_id
+            remapped += 1
+            return str(rng.choice(node_pool)) if node_pool else None
+
         for _, row in df.iterrows():
-            income = int(row["income_bracket"])
+            # The population pipeline writes income_bracket as a human-readable band
+            # ("20000-50000") and the 1-5 code the agents actually use alongside it.
+            if "income_bracket_numeric" in row:
+                income = int(row["income_bracket_numeric"])
+            else:
+                income = int(row["income_bracket"])
             age = int(row["age"])
             has_car = bool(row["has_car"])
             has_bike = bool(row["has_bike"])
@@ -203,9 +310,9 @@ class UrbanModel(mesa.Model):
             occ_str = str(row["occupation"])
             occupation = occ_map.get(occ_str, Occupation.BLUE_COLLAR_WORKER)
 
-            # Node assignment (ensure strings for OSM IDs)
-            home_node = str(row["home_node"])
-            work_node = (
+            # Node assignment (ensure strings for OSM IDs), repairing stale references.
+            home_node = _valid_node(str(row["home_node"]))
+            work_node = _valid_node(
                 str(row["work_node"])
                 if pd.notna(row["work_node"]) and str(row["work_node"]) != "nan"
                 else None
@@ -272,6 +379,14 @@ class UrbanModel(mesa.Model):
             self.schedule.add(agent)
             agent_id += 1
             hh_id += 1
+
+        if remapped:
+            print(
+                f"Note: {remapped} home/work references in {parquet_path} pointed at nodes "
+                "missing from the road graph and were reassigned. Re-run "
+                "data/pipelines/run_all.py --force to regenerate the population against "
+                "the current network."
+            )
 
     def _spawn_economic_agents(self) -> None:
         """Spawn Mesa-compatible economic agents (stalls, stores, delivery)."""
@@ -780,6 +895,8 @@ class MesaSimEngine:
         self.config = config
         self.model = UrbanModel(config, data_paths=data_paths)
         self._pending_events: list[Event] = []
+        self._focus_ids: frozenset[int] = self._pick_focus_cohort()
+        self._dwellings_cache: dict[str, Dwelling] | None = None
 
         # Phase 2: Auto-load DMRC schedule if available (SUB-03, task 3.1)
         self._load_dmrc_schedule()
@@ -817,7 +934,9 @@ class MesaSimEngine:
         """Advance time by one tick, applying queued events."""
         # 1. Advance tick count and time
         self.model.current_tick += 1
-        self.model.sim_time_minutes = self.model.current_tick * self.config.tick_minutes
+        self.model.sim_time_minutes = (
+            self.model.start_time_minutes + self.model.current_tick * self.config.tick_minutes
+        )
 
         # 2. Process event dispatcher
         self._dispatch_events()
@@ -837,7 +956,280 @@ class MesaSimEngine:
             status=ScenarioStatus.running,
             metrics=self.model.metrics,
             grid=self._generate_grid_cells(),
+            agent_legs=self.active_agent_legs(),
+            presences=self.focus_presences(),
+            dwellings=self.focus_dwellings(),
         )
+
+    # --- focus cohort (individually rendered agents) ----------------------------------
+    def _pick_focus_cohort(self) -> frozenset[int]:
+        """Choose the agents the map may follow individually.
+
+        Deterministic in the scenario seed, so the same run always follows the same
+        citizens and the frontend can keep stable identities across reconnects.
+        """
+        citizens = sorted(
+            a.unique_id
+            for a in self.model.schedule.agents
+            if isinstance(a, CitizenAgent)
+        )
+        limit = getattr(self.config, "max_tracked_agents", FOCUS_COHORT_SIZE)
+        if len(citizens) <= limit:
+            return frozenset(citizens)
+        rng = np.random.default_rng(self.config.seed)
+        picked = rng.choice(len(citizens), size=limit, replace=False)
+        return frozenset(citizens[i] for i in picked)
+
+    def _route_polyline(self, route: list[str]) -> list[tuple[float, float]]:
+        """Convert a node-id route into the line a vehicle actually drives.
+
+        Intersections alone are not the road: 42% of the OSM edges here are curved, so
+        joining consecutive intersections with straight chords sends traffic through
+        buildings. Each edge contributes its real shape where one is recorded.
+        """
+        graph = self.model.network.g
+        nodes = graph.nodes
+
+        def node_point(node_id: str) -> tuple[float, float] | None:
+            data = nodes.get(node_id)
+            if data and "lat" in data and "lon" in data:
+                return (float(data["lat"]), float(data["lon"]))
+            return None
+
+        out: list[tuple[float, float]] = []
+        for index, node_id in enumerate(route):
+            point = node_point(node_id)
+            if point is None:
+                continue
+            if not out or out[-1] != point:
+                out.append(point)
+
+            if index + 1 >= len(route):
+                break
+
+            next_id = route[index + 1]
+            edge = graph.edges.get((node_id, next_id)) if graph.has_edge(node_id, next_id) else None
+            shape = (edge or {}).get("shape") or []
+            if len(shape) < 3:
+                continue
+
+            # OSM stores a way's geometry in its own direction; align it with travel.
+            first, last = shape[0], shape[-1]
+            nxt = node_point(next_id)
+            if nxt is not None and _sq_dist(first, point) > _sq_dist(last, point):
+                shape = list(reversed(shape))
+
+            for vertex in shape[1:-1]:
+                vertex = (float(vertex[0]), float(vertex[1]))
+                if vertex != out[-1]:
+                    out.append(vertex)
+
+        # 6 decimal places is ~11 cm on the ground — far finer than a lane — and roughly
+        # halves the bytes, because a raw float serialises as 28.631635000000002.
+        return [(round(lat, 6), round(lon, 6)) for lat, lon in _simplify(out, MAX_POLYLINE_POINTS)]
+
+    def active_agent_legs(self) -> list[AgentLeg]:
+        """Legs currently under way for the focus cohort.
+
+        The client animates along each polyline using simulated time, which is why the
+        engine's own travel-time estimate is shipped with the geometry.
+        """
+        legs: list[AgentLeg] = []
+        net = self.model.network
+        for agent in self.model.schedule.agents:
+            if agent.unique_id not in self._focus_ids:
+                continue
+            if getattr(agent, "state", None) != "COMMUTING":
+                continue
+            route = getattr(agent, "current_route", None)
+            if not route or len(route) < 2:
+                continue
+
+            polyline = self._route_polyline(route)
+            if len(polyline) < 2:
+                continue
+
+            mode_name = getattr(agent, "current_mode", None) or "walk"
+            try:
+                mode = Mode(mode_name)
+            except ValueError:
+                mode = Mode.walk
+
+            duration = net.calculate_path_travel_time(route, mode_name)
+            if duration <= 0:
+                # A zero-length estimate would make the client divide by zero; one tick
+                # is the shortest journey the engine can actually represent.
+                duration = float(self.config.tick_minutes)
+
+            legs.append(
+                AgentLeg(
+                    agent_id=str(agent.unique_id),
+                    mode=mode,
+                    occupation=_enum_value(getattr(agent, "occupation", "")),
+                    destination_activity=self._destination_activity(agent),
+                    start_minute=int(getattr(agent, "commute_start_time", 0)),
+                    duration_minutes=float(duration),
+                    polyline=polyline,
+                )
+            )
+        return legs
+
+    def focus_presences(self) -> list[AgentPresence]:
+        """Where tracked agents are when they are not on the road, and what they're doing.
+
+        Includes the working city — stall owners, shopkeepers, shop staff and delivery
+        riders — which the simulation has always created but never showed anyone.
+        """
+        out: list[AgentPresence] = []
+        nodes = self.model.network.g.nodes
+
+        for agent in self.model.schedule.agents:
+            presence = self._economic_presence(agent, nodes)
+            if presence is not None:
+                out.append(presence)
+
+        for agent in self.model.schedule.agents:
+            if agent.unique_id not in self._focus_ids:
+                continue
+            state = getattr(agent, "state", None)
+            if state not in ("AT_HOME", "AT_WORK"):
+                continue
+
+            at_home = state == "AT_HOME"
+            node_id = agent.home_node if at_home else (agent.work_node or agent.home_node)
+            data = nodes.get(node_id)
+            if not data or "lat" not in data:
+                continue
+
+            out.append(
+                AgentPresence(
+                    agent_id=str(agent.unique_id),
+                    place="home" if at_home else "away",
+                    activity=agent.current_activity_label(),
+                    lat=float(data["lat"]),
+                    lon=float(data["lon"]),
+                    role="citizen",
+                    detail={
+                        "Occupation": _enum_value(getattr(agent, "occupation", "")).replace(
+                            "_", " "
+                        ),
+                        "Age": str(getattr(agent, "age", "")),
+                        "Household": f"#{getattr(agent, 'household_id', 0)}",
+                    },
+                )
+            )
+        return out
+
+    def _economic_presence(self, agent, nodes) -> AgentPresence | None:
+        """Render one economic agent, or None if this agent is not one.
+
+        These agents never commute in the CitizenAgent sense — they hold a position (a
+        stall pitch, a shop, a delivery depot) and their interesting state is commercial:
+        stock, takings, whether they have gone bust.
+        """
+        role = _ECONOMIC_ROLES.get(type(agent).__name__)
+        if role is None:
+            return None
+
+        # Each economic agent names its position differently: a stall owner moves between
+        # home and a pitch, a manager is defined by their store.
+        node_id = next(
+            (
+                getattr(agent, attr, None)
+                for attr in ("current_location", "store_node", "vending_node", "home_node")
+                if getattr(agent, attr, None)
+            ),
+            None,
+        )
+        data = nodes.get(node_id)
+        if not data or "lat" not in data:
+            return None
+
+        detail: dict[str, str] = {}
+        activity = role.replace("_", " ").title()
+        place = "depot"
+
+        if role == "stall_owner":
+            place = "stall"
+            stall_type = str(getattr(agent, "stall_type", "food"))
+            if getattr(agent, "is_bankrupt", False):
+                activity = f"Shuttered {stall_type} stall - went bust"
+            elif getattr(agent, "is_disrupted_today", False):
+                activity = f"{stall_type.title()} stall closed today - disruption"
+            else:
+                activity = f"Running a {stall_type} stall"
+            detail = {
+                "Stall type": stall_type,
+                "Stock": f"{float(getattr(agent, 'inventory', 0.0)) * 100:.0f}%",
+                "Cash": f"Rs {float(getattr(agent, 'cash_balance', 0.0)):,.0f}",
+            }
+        elif role == "store_manager":
+            place = "store"
+            activity = "Minding the shop"
+            detail = {
+                "Stock": f"{float(getattr(agent, 'inventory', 0.0)) * 100:.0f}%",
+                "Cash": f"Rs {float(getattr(agent, 'cash_balance', 0.0)):,.0f}",
+            }
+        elif role == "store_staff":
+            place = "store"
+            activity = "On shift at the shop"
+            wage = getattr(agent, "daily_wage", None)
+            if wage is not None:
+                detail = {"Daily wage": f"Rs {float(wage):,.0f}"}
+        elif role == "delivery_rider":
+            place = "depot"
+            done = int(getattr(agent, "completed_deliveries", 0))
+            activity = "Waiting for an order" if done == 0 else f"Between drops ({done} today)"
+            detail = {
+                "Deliveries": str(done),
+                "Earnings": f"Rs {float(getattr(agent, 'earnings', 0.0)):,.0f}",
+            }
+
+        return AgentPresence(
+            agent_id=str(agent.unique_id),
+            place=place,
+            activity=activity,
+            lat=float(data["lat"]),
+            lon=float(data["lon"]),
+            role=role,
+            detail=detail,
+        )
+
+    def focus_dwellings(self) -> dict[str, Dwelling]:
+        """Every focus citizen's home. Static for the run, so the client caches it."""
+        if self._dwellings_cache is not None:
+            return self._dwellings_cache
+
+        nodes = self.model.network.g.nodes
+        out: dict[str, Dwelling] = {}
+        for agent in self.model.schedule.agents:
+            if agent.unique_id not in self._focus_ids:
+                continue
+            dwelling = getattr(agent, "dwelling", None)
+            data = nodes.get(getattr(agent, "home_node", None))
+            if dwelling is None or not data or "lat" not in data:
+                continue
+            out[str(agent.unique_id)] = Dwelling(
+                kind=dwelling.kind,
+                income_bracket=dwelling.bracket,
+                area_sqm=dwelling.area_sqm,
+                storeys=dwelling.storeys,
+                rooms=list(dwelling.rooms),
+                lat=float(data["lat"]),
+                lon=float(data["lon"]),
+            )
+        self._dwellings_cache = out
+        return out
+
+    @staticmethod
+    def _destination_activity(agent) -> str:
+        """Human-readable label for where this leg is heading."""
+        schedule = getattr(agent, "schedule", None)
+        legs = schedule.get_legs() if schedule is not None else []
+        idx = getattr(agent, "_current_leg_index", 0)
+        if legs and 0 <= idx < len(legs):
+            return _enum_value(legs[idx][1].activity_type)
+        return "WORK" if getattr(agent, "state", "") == "COMMUTING" else "HOME"
 
     def _dispatch_events(self) -> None:
         """Dispatch and apply queued events directly to network structures."""
@@ -910,8 +1302,12 @@ class MesaSimEngine:
             if not node_id:
                 continue
 
-            # Retrieve node coordinates
-            node_data = self.model.network.g.nodes[node_id]
+            # Retrieve node coordinates. A node can be absent if the population parquet was
+            # generated against a different vintage of the OSM graph; one stale reference
+            # must not take down the whole snapshot.
+            node_data = self.model.network.g.nodes.get(node_id)
+            if not node_data or "lat" not in node_data:
+                continue
             lat, lon = node_data["lat"], node_data["lon"]
 
             r = int(np.clip((lat - lat_start) / lat_step, 0, GRID_ROWS - 1))
