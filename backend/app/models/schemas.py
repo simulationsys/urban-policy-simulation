@@ -58,6 +58,25 @@ class ScenarioConfig(BaseModel):
     population: int = Field(default=5_000, ge=1, le=200_000)
     seed: int = Field(default=42, description="Single RNG seed for the whole run.")
     tick_minutes: int = Field(default=5, description="Simulated minutes per tick.")
+    max_tracked_agents: int = Field(
+        default=2_000,
+        ge=1,
+        description=(
+            "Upper bound on agents streamed individually to the map. Everyone else still "
+            "affects the simulation and shows up in the aggregate grid; this only caps how "
+            "many are drawn as their own person."
+        ),
+    )
+    start_time_minutes: int = Field(
+        default=0,
+        ge=0,
+        lt=24 * 60,
+        description=(
+            "Minutes past midnight the run begins at. A run starting at 00:00 shows an "
+            "empty city until the morning peak, so demos start in the small hours of the "
+            "commute instead of waiting through the night."
+        ),
+    )
     # Widened to match Event.payload so bool toggles (WFH) and named knobs (metro line) fit.
     params: dict[str, float | int | str | bool] = Field(default_factory=dict)
     # --- Real data mode (Phase 1) ---
@@ -160,6 +179,71 @@ class GridCell(BaseModel):
     congestion: float = 0.0
 
 
+class AgentLeg(BaseModel):
+    """One sampled agent's current journey leg, for map rendering.
+
+    We stream *legs*, not per-tick positions. A tick is several simulated minutes, so a
+    position update per tick would teleport a car hundreds of metres; instead the client
+    receives the whole leg once and animates along ``polyline`` between ``start_minute``
+    and ``start_minute + duration_minutes`` of simulated time.
+
+    Only a fixed-size *focus cohort* is ever serialized — never the whole population
+    (PROJECT_SPEC §16.1: "don't render every agent"). The grid cells remain the way
+    population-scale density reaches the map.
+    """
+
+    agent_id: str
+    mode: Mode
+    occupation: str = ""
+    destination_activity: str = ""
+    start_minute: int = Field(description="Simulated minutes since midnight at departure.")
+    duration_minutes: float = Field(gt=0, description="Engine's estimated travel time.")
+    polyline: list[tuple[float, float]] = Field(
+        default_factory=list, description="WGS84 [lat, lon] vertices of the routed path."
+    )
+
+
+class Dwelling(BaseModel):
+    """The home a citizen can afford, and where it stands.
+
+    Sent once per focus agent (homes do not move) so the map can build the residential
+    fabric and let a spectator step inside.
+    """
+
+    kind: str = Field(examples=["jhuggi", "chawl_room", "walkup_flat", "apartment", "bungalow"])
+    income_bracket: int = Field(ge=1, le=5)
+    area_sqm: float = Field(gt=0)
+    storeys: int = Field(ge=1)
+    rooms: list[str] = Field(default_factory=list)
+    lat: float
+    lon: float
+
+
+class AgentPresence(BaseModel):
+    """A tracked agent who is *not* travelling — at home, at work, or minding a business.
+
+    Streamed so the city is populated between commutes: without this, agents vanish the
+    moment they arrive somewhere and the map looks deserted outside rush hour. Covers both
+    citizens and the economic agents (stalls, shops, delivery riders) that make up the
+    working city.
+    """
+
+    agent_id: str
+    place: str = Field(examples=["home", "away", "stall", "store", "depot"])
+    activity: str = Field(description="Plain-language description, e.g. 'Cooking dinner'.")
+    lat: float
+    lon: float
+    role: str = Field(
+        default="citizen",
+        examples=["citizen", "stall_owner", "store_manager", "store_staff", "delivery_rider"],
+        description="What this agent does in the city, which decides how it is drawn.",
+    )
+    detail: dict[str, str] = Field(
+        default_factory=dict,
+        description="Role-specific facts for the inspector: takings, stock, deliveries.",
+    )
+
+
 class Snapshot(BaseModel):
     """Full world state at a tick. Fetched over REST, not streamed every frame."""
 
@@ -169,18 +253,36 @@ class Snapshot(BaseModel):
     status: ScenarioStatus
     metrics: AggregateMetrics
     grid: list[GridCell] = Field(default_factory=list)
+    agent_legs: list[AgentLeg] = Field(
+        default_factory=list, description="All in-progress legs of the focus cohort."
+    )
+    presences: list[AgentPresence] = Field(
+        default_factory=list, description="Focus-cohort citizens currently stationary."
+    )
+    dwellings: dict[str, Dwelling] = Field(
+        default_factory=dict, description="Focus-cohort homes, keyed by agent id."
+    )
 
 
 class TickDiff(BaseModel):
     """The smallest thing that conveys change — streamed over WebSocket each tick.
 
-    Carries metrics every tick (cheap) and only changed grid cells.
+    Carries metrics every tick (cheap), only changed grid cells, and only the focus-cohort
+    legs that *started* this tick (plus the ids of those that ended).
     """
 
     scenario_id: str
     tick: int
     metrics: AggregateMetrics
     changed_cells: list[GridCell] = Field(default_factory=list)
+    started_legs: list[AgentLeg] = Field(default_factory=list)
+    finished_agents: list[str] = Field(default_factory=list)
+    presences: list[AgentPresence] = Field(
+        default_factory=list, description="Stationary citizens whose activity changed."
+    )
+    dwellings: dict[str, Dwelling] = Field(
+        default_factory=dict, description="Homes not sent to this client yet."
+    )
 
 
 # --------------------------------------------------------------------------------------

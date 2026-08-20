@@ -132,6 +132,11 @@ class ScenarioManager:
         interval = self._settings.tick_interval_seconds
         st = self._state.ensure(scenario_id)
         prev_cells: dict[tuple[float, float], float] = {}
+        # agent_id -> start_minute of the leg last sent, so a re-departure is re-sent.
+        prev_legs: dict[str, int] = {}
+        # agent_id -> (place, activity) last sent, so we only resend on a real change.
+        prev_presence: dict[str, tuple[str, str]] = {}
+        sent_dwellings: set[str] = set()
         try:
             while True:
                 snap = await asyncio.to_thread(engine.step)
@@ -147,11 +152,43 @@ class ScenarioManager:
                         changed.append(cell)
                         prev_cells[key] = cell.congestion
 
+                # Focus-cohort legs: send a leg once when it starts, and the id once it
+                # ends. Re-sending an in-progress leg every tick would defeat the diff.
+                started = [
+                    leg
+                    for leg in snap.agent_legs
+                    if prev_legs.get(leg.agent_id) != leg.start_minute
+                ]
+                active_ids = {leg.agent_id: leg.start_minute for leg in snap.agent_legs}
+                finished = [aid for aid in prev_legs if aid not in active_ids]
+                prev_legs = active_ids
+
+                # Stationary citizens: resend only when their activity or place changes,
+                # which for a chore routine is a handful of agents per tick.
+                changed_presences = []
+                seen_presence: dict[str, tuple[str, str]] = {}
+                for p in snap.presences:
+                    key = (p.place, p.activity)
+                    seen_presence[p.agent_id] = key
+                    if prev_presence.get(p.agent_id) != key:
+                        changed_presences.append(p)
+                prev_presence = seen_presence
+
+                # Homes never move, so each one goes out exactly once per connection-set.
+                new_dwellings = {
+                    aid: d for aid, d in snap.dwellings.items() if aid not in sent_dwellings
+                }
+                sent_dwellings.update(new_dwellings)
+
                 diff = TickDiff(
                     scenario_id=scenario_id,
                     tick=snap.tick,
                     metrics=snap.metrics,
                     changed_cells=changed,
+                    started_legs=started,
+                    finished_agents=finished,
+                    presences=changed_presences,
+                    dwellings=new_dwellings,
                 )
                 await self._ws.broadcast(
                     scenario_id,
@@ -205,7 +242,8 @@ class ScenarioManager:
         data_paths = (
             self._settings.resolved_data_paths(config.city) if config.use_real_data else None
         )
-        return build_engine(self._settings.sim_engine, config, data_paths)
+        kind, _ = self._settings.resolve_engine_kind()
+        return build_engine(kind, config, data_paths)
 
     def _require(self, scenario_id: str) -> ScenarioSummary:
         summary = self._metadata.get(scenario_id)
