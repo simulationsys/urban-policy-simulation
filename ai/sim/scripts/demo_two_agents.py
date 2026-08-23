@@ -49,7 +49,7 @@ def make_priya() -> Agent:
         has_bike=True,
         has_metro_pass=True,
         schedule=schedule,
-        weights=UtilityWeights(beta_cost=-0.08, beta_weather=-2.8),
+        weights=UtilityWeights(beta_cost=-0.08, beta_weather=-5.5),
         activity_locations={
             ActivityType.HOME: home,
             ActivityType.EDUCATION: school,

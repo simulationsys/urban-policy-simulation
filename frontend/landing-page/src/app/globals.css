@@ -1,0 +1,469 @@
+@import "tailwindcss";
+@theme {
+  --color-primary: #CC8066;
+  --color-secondary: #111827;
+  --color-tertiary: #CC8066; /* Keep primary for tertiary fallback if used */
+  --color-neutral: #9CA3AF;
+  --color-background: #0A0A0A;
+  --color-surface: #121212;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #9CA3AF;
+  --color-border: #27272A;
+  --color-accent: #E5E7EB;
+
+  --font-sans: var(--font-outfit, sans-serif);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+:root {
+  --background: #0A0A0A;
+  --foreground: #FFFFFF;
+}
+
+/* Custom Cursor - Hide default */
+@media (pointer: fine) {
+  body {
+    cursor: none;
+  }
+  
+  a, button, [role="button"], input, select, textarea {
+    cursor: none !important;
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utilities for Glass & Shadows */
+@utility glass-surface {
+  background: rgba(25, 28, 33, 0.85); /* Surface #191C21 */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@utility glass-overlay {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+@utility shadow-dual {
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8);
+}
+
+@utility gradient-border-shell {
+  background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, transparent 100%);
+  padding: 1px;
+}
+
+/* Utilities for text */
+@utility text-display-lg {
+  font-size: 64px;
+  font-weight: 500;
+  line-height: 1.04;
+  letter-spacing: 0;
+}
+
+@utility text-body-md {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+@utility text-label-md {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+
+/* Liquid Glass Component Library Styles */
+
+
+@theme {
+  --color-glass-50: rgba(255, 255, 255, 0.05);
+  --color-glass-100: rgba(255, 255, 255, 0.08);
+  --color-glass-200: rgba(255, 255, 255, 0.12);
+  --color-glass-300: rgba(255, 255, 255, 0.18);
+  --color-glass-400: rgba(255, 255, 255, 0.25);
+  --color-glass-500: rgba(255, 255, 255, 0.35);
+  --color-glass-600: rgba(255, 255, 255, 0.50);
+  --color-glass-700: rgba(255, 255, 255, 0.65);
+  --color-glass-800: rgba(255, 255, 255, 0.80);
+  --color-glass-900: rgba(255, 255, 255, 0.95);
+  --color-glass-dark-50: rgba(0, 0, 0, 0.05);
+  --color-glass-dark-100: rgba(0, 0, 0, 0.08);
+  --color-glass-dark-200: rgba(0, 0, 0, 0.12);
+  --color-glass-dark-300: rgba(0, 0, 0, 0.18);
+  --color-glass-dark-400: rgba(0, 0, 0, 0.25);
+  --color-glass-dark-500: rgba(0, 0, 0, 0.35);
+  --color-glass-dark-600: rgba(0, 0, 0, 0.50);
+  --color-glass-dark-700: rgba(0, 0, 0, 0.65);
+  --color-glass-dark-800: rgba(0, 0, 0, 0.80);
+  --color-glass-dark-900: rgba(0, 0, 0, 0.95);
+  --color-liquid-blue: #3b82f6;
+  --color-liquid-purple: #8b5cf6;
+  --color-liquid-pink: #ec4899;
+  --color-liquid-cyan: #06b6d4;
+  --color-liquid-emerald: #10b981;
+  --color-liquid-amber: #f59e0b;
+  --color-liquid-rose: #f43f5e;
+}
+
+/* Register the glass variables so they can be transitioned locally
+   (e.g. for overlay enter animations). */
+@property --lg-blur {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 17;
+}
+@property --lg-saturation {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 100;
+}
+
+/* ───────── Base Styles ───────── */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    transition: background-color 0.4s ease, color 0.4s ease;
+  }
+
+  :root {
+    --lg-blur: 17;
+    --lg-transparency: 10;
+    --lg-reflection: 50;
+    --lg-fluidity: 50;
+    --lg-saturation: 100;
+  }
+
+  /* DARK (default) */
+  :root, .dark {
+    --lg-bg: #0a0a0f;
+    --lg-text: #f8fafc;
+    --lg-text-secondary: rgba(255,255,255,0.55);
+    --lg-text-muted: rgba(255,255,255,0.35);
+    --lg-surface: linear-gradient(135deg,rgba(255,255,255,0.12) 0%,rgba(255,255,255,0.06) 50%,rgba(255,255,255,0.02) 100%);
+    --lg-surface-strong: linear-gradient(135deg,rgba(255,255,255,0.18) 0%,rgba(255,255,255,0.10) 50%,rgba(255,255,255,0.04) 100%);
+    --lg-surface-chrome: linear-gradient(135deg,rgba(0,0,0,0.30) 0%,rgba(0,0,0,0.18) 50%,rgba(0,0,0,0.08) 100%);
+    --lg-border: color-mix(in srgb, white calc(var(--lg-transparency) * 0.24%), transparent);
+    --lg-border-subtle: color-mix(in srgb, white calc(var(--lg-transparency) * 0.12%), transparent);
+    --lg-highlight-top: rgba(255,255,255,0.18);
+    --lg-highlight-bottom: rgba(0,0,0,0.12);
+    --lg-shadow: rgba(0,0,0,0.20);
+    --lg-shadow-strong: rgba(0,0,0,0.30);
+    --lg-reflection-base: rgba(255,255,255,0.05);
+    --lg-surface-stop-1: 0.24%;
+    --lg-surface-stop-2: 0.12%;
+    --lg-surface-stop-3: 0.04%;
+    --lg-surface-strong-stop-1: 0.36%;
+    --lg-surface-strong-stop-2: 0.20%;
+    --lg-surface-strong-stop-3: 0.08%;
+    --lg-surface-dark-stop-1: 0.12%;
+    --lg-surface-dark-stop-2: 0.06%;
+    --lg-surface-dark-stop-3: 0.02%;
+    --lg-ripple: rgba(255,255,255,0.25);
+    --lg-overlay: rgba(0,0,0,0.50);
+    color-scheme: dark;
+    background: var(--lg-bg);
+    color: var(--lg-text);
+  }
+
+  /* LIGHT */
+  .light {
+    --lg-bg: #f2f1f6;
+    --lg-text: #1c1c1e;
+    --lg-text-secondary: rgba(0,0,0,0.55);
+    --lg-text-muted: rgba(0,0,0,0.32);
+    --lg-surface: linear-gradient(135deg,rgba(255,255,255,0.72) 0%,rgba(255,255,255,0.52) 50%,rgba(255,255,255,0.38) 100%);
+    --lg-surface-strong: linear-gradient(135deg,rgba(255,255,255,0.82) 0%,rgba(255,255,255,0.62) 50%,rgba(255,255,255,0.48) 100%);
+    --lg-surface-chrome: linear-gradient(135deg,rgba(245,245,247,0.80) 0%,rgba(245,245,247,0.60) 50%,rgba(245,245,247,0.44) 100%);
+    --lg-border: color-mix(in srgb, black calc(var(--lg-transparency) * 0.16%), transparent);
+    --lg-border-subtle: color-mix(in srgb, black calc(var(--lg-transparency) * 0.08%), transparent);
+    --lg-highlight-top: rgba(255,255,255,0.70);
+    --lg-highlight-bottom: rgba(0,0,0,0.04);
+    --lg-shadow: rgba(0,0,0,0.06);
+    --lg-shadow-strong: rgba(0,0,0,0.12);
+    --lg-reflection-base: rgba(255,255,255,0.40);
+    --lg-surface-stop-1: 1.44%;
+    --lg-surface-stop-2: 1.04%;
+    --lg-surface-stop-3: 0.76%;
+    --lg-surface-strong-stop-1: 1.80%;
+    --lg-surface-strong-stop-2: 1.32%;
+    --lg-surface-strong-stop-3: 1.00%;
+    --lg-surface-dark-stop-1: 1.00%;
+    --lg-surface-dark-stop-2: 0.72%;
+    --lg-surface-dark-stop-3: 0.52%;
+    --lg-ripple: rgba(0,0,0,0.10);
+    --lg-overlay: rgba(0,0,0,0.30);
+    color-scheme: light;
+    background: var(--lg-bg);
+    color: var(--lg-text);
+  }
+}
+
+/* ───────── Glass Utilities ───────── */
+@utility glass-blur {
+  backdrop-filter: blur(calc(var(--lg-blur) * 0.48px)) saturate(calc(var(--lg-saturation) * 2%));
+}
+@utility glass-blur-sm {
+  backdrop-filter: blur(calc(var(--lg-blur) * 0.24px)) saturate(calc(var(--lg-saturation) * 2%));
+}
+@utility glass-blur-lg {
+  backdrop-filter: blur(calc(var(--lg-blur) * 0.8px)) saturate(calc(var(--lg-saturation) * 2%));
+}
+@utility glass-blur-xl {
+  backdrop-filter: blur(calc(var(--lg-blur) * 1.2px)) saturate(calc(var(--lg-saturation) * 2%));
+}
+
+  /* Surfaces — theme-aware, dynamically adjustable via --lg-transparency */
+  .glass-surface {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-stop-1)), transparent) 0%,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-stop-2)), transparent) 50%,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-stop-3)), transparent) 100%
+    );
+  }
+  .glass-surface-strong {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-strong-stop-1)), transparent) 0%,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-strong-stop-2)), transparent) 50%,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-strong-stop-3)), transparent) 100%
+    );
+  }
+  .glass-surface-dark {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-dark-stop-1)), transparent) 0%,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-dark-stop-2)), transparent) 50%,
+      color-mix(in srgb, white calc(var(--lg-transparency) * var(--lg-surface-dark-stop-3)), transparent) 100%
+    );
+  }
+
+  /* Dynamic surface opacity multiplier */
+  .glass-surface-dynamic {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--lg-reflection-base) calc(var(--lg-transparency) * 0.9%), transparent) 0%,
+      color-mix(in srgb, var(--lg-reflection-base) calc(var(--lg-transparency) * 0.5%), transparent) 50%,
+      color-mix(in srgb, var(--lg-reflection-base) calc(var(--lg-transparency) * 0.2%), transparent) 100%
+    );
+  }
+
+  /* Borders */
+  .glass-border {
+    border: 1px solid var(--lg-border);
+  }
+  .glass-border-subtle {
+    border: 1px solid var(--lg-border-subtle);
+  }
+
+  /* Highlights & shadows */
+  .glass-highlight {
+    box-shadow:
+      inset 0 1px 0 var(--lg-highlight-top),
+      inset 0 -1px 0 var(--lg-highlight-bottom),
+      0 4px 24px var(--lg-shadow);
+  }
+  .glass-highlight-strong {
+    box-shadow:
+      inset 0 1px 0 var(--lg-highlight-top),
+      inset 0 -1px 0 var(--lg-highlight-bottom),
+      0 8px 32px var(--lg-shadow-strong);
+  }
+  .glass-inner-glow {
+    box-shadow: inset 0 1px 1px var(--lg-highlight-top);
+  }
+
+  /* Reflection blob intensity */
+  .glass-reflection {
+    background: color-mix(in srgb, var(--lg-reflection-base) calc(var(--lg-reflection) * 1%), transparent);
+  }
+
+  /* Text */
+  .text-glass {
+    color: var(--lg-text);
+  }
+  .text-glass-muted {
+    color: var(--lg-text-secondary);
+  }
+  .text-glass-dim {
+    color: var(--lg-text-muted);
+  }
+
+  /* Animations */
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  .animate-float-delayed {
+    animation: float 6s ease-in-out 2s infinite;
+  }
+  .animate-float-slow {
+    animation: float 8s ease-in-out 1s infinite;
+  }
+  .animate-pulse-glow {
+    animation: pulseGlow 3s ease-in-out infinite;
+  }
+  .animate-shimmer {
+    animation: shimmer 2s linear infinite;
+  }
+
+/* Liquid-glass mode: swap the CSS blur utilities for the shared kube
+   refraction filters. Two filters are rendered by ThemeProvider:
+   - full filter (#lg-liquid-glass-filter) for large surfaces (lg/xl)
+   - lite filter (#lg-liquid-glass-filter-lite) for small/medium elements
+     (base/sm). The lite variant drops feGaussianBlur and feComponentTransfer
+     so dozens of buttons/inputs pay for only 4 filter primitives instead of 6.
+   `contain: layout` isolates each glass element's layout so child
+   changes (ripples, hover scales) don't invalidate unrelated
+   backdrop-filter nodes. We avoid `contain: paint` because many glass
+   hosts (sliders, raised tab buttons) have children that intentionally
+   overflow their bounds. */
+
+  [data-glass-mode="liquid-glass"] .glass-blur,
+  [data-glass-mode="liquid-glass"] .glass-blur-sm {
+    backdrop-filter: url(#lg-liquid-glass-filter-lite);
+    -webkit-backdrop-filter: url(#lg-liquid-glass-filter-lite);
+    contain: layout;
+  }
+  
+  [data-glass-mode="liquid-glass"] .glass-blur-lg,
+  [data-glass-mode="liquid-glass"] .glass-blur-xl {
+    backdrop-filter: url(#lg-liquid-glass-filter);
+    -webkit-backdrop-filter: url(#lg-liquid-glass-filter);
+    contain: layout;
+  }
+
+  /* Modal/drawer/sheet backdrops: dim + blur in glass mode, fully transparent
+     and unblurred in liquid-glass mode so the refractive surfaces stay crisp. */
+  .glass-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(calc(var(--lg-blur) * 0.24px)) saturate(calc(var(--lg-saturation) * 2%));
+    -webkit-backdrop-filter: blur(calc(var(--lg-blur) * 0.24px)) saturate(calc(var(--lg-saturation) * 2%));
+  }
+  .glass-backdrop-subtle {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(calc(var(--lg-blur) * 0.24px)) saturate(calc(var(--lg-saturation) * 2%));
+    -webkit-backdrop-filter: blur(calc(var(--lg-blur) * 0.24px)) saturate(calc(var(--lg-saturation) * 2%));
+  }
+  .glass-backdrop-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--lg-overlay);
+    backdrop-filter: blur(calc(var(--lg-blur) * 0.24px)) saturate(calc(var(--lg-saturation) * 2%));
+    -webkit-backdrop-filter: blur(calc(var(--lg-blur) * 0.24px)) saturate(calc(var(--lg-saturation) * 2%));
+  }
+  [data-glass-mode="liquid-glass"] .glass-backdrop,
+  [data-glass-mode="liquid-glass"] .glass-backdrop-subtle,
+  [data-glass-mode="liquid-glass"] .glass-backdrop-overlay {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* Overlays and portaled popovers mount on demand; tell the compositor to
+     prepare backdrop-filter ahead of time so blur/saturation do not pop in
+     after a short delay. Fixed-position hosts (overlay roots and portaled
+     popovers) are the only places where this hint is needed. */
+  .fixed .glass-blur,
+  .fixed .glass-blur-sm,
+  .fixed .glass-blur-lg,
+  .fixed .glass-blur-xl,
+  .fixed.glass-blur,
+  .fixed.glass-blur-sm,
+  .fixed.glass-blur-lg,
+  .fixed.glass-blur-xl,
+  .glass-backdrop,
+  .glass-backdrop-subtle,
+  .glass-backdrop-overlay {
+    will-change: backdrop-filter;
+    transition:
+      --lg-blur 0.35s ease-out,
+      --lg-saturation 0.35s ease-out,
+      backdrop-filter 0.35s ease-out,
+      -webkit-backdrop-filter 0.35s ease-out;
+  }
+
+
+/* ───────── Keyframes ───────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(2deg); }
+}
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes morphBlob {
+  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  25% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+  50% { border-radius: 50% 60% 30% 60% / 30% 40% 70% 60%; }
+  75% { border-radius: 60% 40% 60% 30% / 70% 30% 50% 60%; }
+}
+.animate-morph {
+  animation: morphBlob 12s ease-in-out infinite;
+}
+
+/* ───────── Liquid Ripple Effect ───────── */
+@keyframes liquidRipple {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.6;
+    border-radius: 45% 55% 50% 50% / 55% 45% 50% 50%;
+  }
+  25% {
+    border-radius: 55% 45% 52% 48% / 45% 55% 48% 52%;
+  }
+  50% {
+    border-radius: 48% 52% 45% 55% / 52% 48% 55% 45%;
+    opacity: 0.3;
+  }
+  75% {
+    border-radius: 50% 50% 55% 45% / 48% 52% 45% 55%;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.5);
+    opacity: 0;
+    border-radius: 50%;
+  }
+}
+.liquid-ripple {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, var(--lg-ripple) 0%, transparent 70%);
+  animation: liquidRipple calc(0.7s + var(--lg-fluidity) * 0.004s) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ───────── Light-mode Top/Inner Highlights ───────── */
+.light .glass-top-highlight {
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.60), transparent);
+}
+.dark .glass-top-highlight,
+:root .glass-top-highlight {
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.20), transparent);
+}

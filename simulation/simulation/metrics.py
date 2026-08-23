@@ -167,6 +167,82 @@ def calculate_metrics(model: UrbanModel) -> dict:
         avg_commute *= 1.0 + 0.6 * rain
         road_congestion = min(1.0, road_congestion + 0.3 * rain)
 
+    # Extract special agents and nodes details
+    special_agents = []
+
+    for officer in getattr(model, "officers", {}).values():
+        loc = getattr(officer, "current_location", None)
+        if loc and loc in net.g:
+            node_data = net.g.nodes[loc]
+            special_agents.append({
+                "id": officer.officer_id,
+                "type": "officer",
+                "lat": node_data["lat"],
+                "lon": node_data["lon"],
+                "is_busy": False
+            })
+
+    for worker in getattr(model, "drainage_workers", {}).values():
+        loc = getattr(worker, "current_location", None)
+        if loc and loc in net.g:
+            node_data = net.g.nodes[loc]
+            special_agents.append({
+                "id": worker.worker_id,
+                "type": "worker",
+                "lat": node_data["lat"],
+                "lon": node_data["lon"],
+                "is_busy": getattr(worker, "is_busy", False)
+            })
+
+    for police in getattr(model, "traffic_police", {}).values():
+        loc = getattr(police, "current_location", None)
+        if loc and loc in net.g:
+            node_data = net.g.nodes[loc]
+            special_agents.append({
+                "id": police.police_id,
+                "type": "police",
+                "lat": node_data["lat"],
+                "lon": node_data["lon"],
+                "is_busy": False
+            })
+
+    for stall in getattr(model, "stalls", {}).values():
+        loc = getattr(stall, "current_location", None)
+        if loc and loc in net.g and not getattr(stall, "is_bankrupt", False):
+            node_data = net.g.nodes[loc]
+            special_agents.append({
+                "id": stall.stall_id,
+                "type": "stall",
+                "lat": node_data["lat"],
+                "lon": node_data["lon"],
+                "is_busy": getattr(stall, "is_disrupted_today", False)
+            })
+
+    for store in getattr(model, "stores", {}).values():
+        loc = getattr(store, "store_node", None)
+        if loc and loc in net.g:
+            node_data = net.g.nodes[loc]
+            special_agents.append({
+                "id": store.manager_id,
+                "type": "store",
+                "lat": node_data["lat"],
+                "lon": node_data["lon"],
+                "is_busy": False
+            })
+
+    supplier = getattr(model, "supplier", None)
+    if supplier:
+        loc = getattr(supplier, "location_node", None)
+        if loc and loc in net.g:
+            node_data = net.g.nodes[loc]
+            special_agents.append({
+                "id": supplier.id,
+                "type": "supplier",
+                "lat": node_data["lat"],
+                "lon": node_data["lon"],
+                "is_busy": False
+            })
+
     return {
         "tick": model.current_tick,
         "sim_time_minutes": model.sim_time_minutes,
@@ -178,4 +254,5 @@ def calculate_metrics(model: UrbanModel) -> dict:
         "road_congestion_index": round(road_congestion, 3),
         "agents_commuting": num_commuting,
         "aqi_estimate": round(aqi, 1),
+        "special_agents": special_agents,
     }

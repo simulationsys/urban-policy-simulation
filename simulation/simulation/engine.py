@@ -30,6 +30,9 @@ from simulation.economic_agents import (
     MesaDeliveryAgent,
     WholesaleSupplier,
     ShopChoiceModel,
+    MesaEnforcementOfficer,
+    MesaDrainageWorker,
+    MesaTrafficPolice,
 )
 import pandas as pd
 from simulation.metrics import calculate_metrics
@@ -229,6 +232,9 @@ class UrbanModel(mesa.Model):
         self.stalls: dict[int, MesaStallOwner] = {}
         self.stores: dict[int, MesaStoreManager] = {}
         self.delivery_agents: dict[int, MesaDeliveryAgent] = {}
+        self.officers: dict[int, MesaEnforcementOfficer] = {}
+        self.drainage_workers: dict[int, MesaDrainageWorker] = {}
+        self.traffic_police: dict[int, MesaTrafficPolice] = {}
         self.economic_agents: dict[int, mesa.Agent] = {}
         self.supplier: WholesaleSupplier | None = None
 
@@ -498,6 +504,53 @@ class UrbanModel(mesa.Model):
             self.schedule.add(delivery)
             self.delivery_agents[agent_id_counter] = delivery
             self.economic_agents[agent_id_counter] = delivery
+            agent_id_counter += 1
+
+        # 5. Spawning Enforcement Officers, Drainage Workers, and Traffic Police
+        num_officers = max(1, int(pop_size * 0.002))
+        num_workers = max(1, int(pop_size * 0.002))
+        num_police = max(1, int(pop_size * 0.002))
+
+        # Patrol lists for Enforcement Officers (using candidate metro stations or intersections)
+        patrol_nodes = candidates if len(candidates) >= 2 else (intersections if intersections else [central_node])
+
+        for _ in range(num_officers):
+            # Select 3-4 nodes for this officer's patrol route
+            patrol_route = list(rng.choice(patrol_nodes, size=min(4, len(patrol_nodes)), replace=False))
+            if not patrol_route:
+                patrol_route = [central_node]
+            officer = MesaEnforcementOfficer(
+                model=self,
+                officer_id=agent_id_counter,
+                patrol_nodes=patrol_route
+            )
+            self.schedule.add(officer)
+            self.officers[agent_id_counter] = officer
+            self.economic_agents[agent_id_counter] = officer
+            agent_id_counter += 1
+
+        for _ in range(num_workers):
+            base_node = str(rng.choice(candidates))
+            worker = MesaDrainageWorker(
+                model=self,
+                worker_id=agent_id_counter,
+                base_node=base_node
+            )
+            self.schedule.add(worker)
+            self.drainage_workers[agent_id_counter] = worker
+            self.economic_agents[agent_id_counter] = worker
+            agent_id_counter += 1
+
+        for _ in range(num_police):
+            police_node = str(rng.choice(intersections)) if intersections else str(rng.choice(candidates))
+            police = MesaTrafficPolice(
+                model=self,
+                police_id=agent_id_counter,
+                intersection_node=police_node
+            )
+            self.schedule.add(police)
+            self.traffic_police[agent_id_counter] = police
+            self.economic_agents[agent_id_counter] = police
             agent_id_counter += 1
 
     def _generate_synthetic_population(self, population_size: int) -> None:
@@ -829,6 +882,10 @@ class UrbanModel(mesa.Model):
 
     def step(self) -> None:
         """Advance the Mesa model exactly one step."""
+        # Clear drainage and traffic police nodes for the current tick
+        self.network.drained_nodes.clear()
+        self.network.traffic_police_nodes.clear()
+
         # 0. Daily hooks — reset household resources and adapt agent behavior
         current_day = self.sim_time_minutes // (24 * 60)
         if current_day > self._last_day:

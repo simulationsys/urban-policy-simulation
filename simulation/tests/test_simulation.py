@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from app.models.schemas import ScenarioConfig, Event, EventType
-from simulation.engine import MesaSimEngine, UrbanModel
+from app.models.schemas import Event, EventType, ScenarioConfig
 from simulation.agents import (
-    Occupation,
-    Household,
-    AgentMemory,
     ActivitySchedule,
+    AgentMemory,
     CitizenAgent,
+    Household,
+    Occupation,
 )
+from simulation.engine import MesaSimEngine, UrbanModel
 
 
 def test_model_initialization():

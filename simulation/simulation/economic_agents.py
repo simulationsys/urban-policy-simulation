@@ -7,8 +7,8 @@ with proper step() methods and dynamic restocking via the routing engine.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections import deque
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import mesa
@@ -362,6 +362,15 @@ class MesaStallOwner(mesa.Agent):
         self.current_location = best_node
         self.retail_memory.frustration = max(0.0, self.retail_memory.frustration - 1.5)
 
+    def pay_fine(self, amount: float) -> None:
+        self.cash_balance = max(0.0, self.cash_balance - amount)
+
+    def evict(self) -> None:
+        """Eviction spikes frustration and forces immediate relocation."""
+        self.retail_memory.frustration = min(5.0, self.retail_memory.frustration + 2.0)
+        self.retail_memory.frustration = max(2.5, self.retail_memory.frustration)  # Force relocation trigger
+        self._maybe_relocate()
+
     def reset_for_new_day(self) -> None:
         self._has_begun_day = False
         self.is_disrupted_today = False
@@ -553,3 +562,106 @@ class MesaDeliveryAgent(mesa.Agent):
 
     def reset_for_new_day(self) -> None:
         self.current_location = self.home_node
+
+
+# ---------------------------------------------------------------------------
+# MesaEnforcementOfficer
+# ---------------------------------------------------------------------------
+
+
+class MesaEnforcementOfficer(mesa.Agent):
+    """Mesa-compatible municipal enforcement officer patrolling street vendor zones."""
+
+    def __init__(
+        self,
+        model: UrbanModel,
+        officer_id: int,
+        patrol_nodes: list[str],
+    ) -> None:
+        super().__init__(model)
+        self.officer_id = officer_id
+        self.patrol_nodes = patrol_nodes
+        self.patrol_idx = 0
+        self.current_location = patrol_nodes[0] if patrol_nodes else ""
+
+    def step(self) -> None:
+        if not self.patrol_nodes:
+            return
+
+        # Advance patrol location
+        self.patrol_idx = (self.patrol_idx + 1) % len(self.patrol_nodes)
+        self.current_location = self.patrol_nodes[self.patrol_idx]
+
+        # Evict and fine any roadside vendor at the current node
+        for stall in list(self.model.stalls.values()):
+            if str(stall.current_location) == str(self.current_location) and not stall.is_bankrupt:
+                stall.pay_fine(100.0)
+                stall.evict()
+
+    def reset_for_new_day(self) -> None:
+        self.patrol_idx = 0
+        if self.patrol_nodes:
+            self.current_location = self.patrol_nodes[0]
+
+
+# ---------------------------------------------------------------------------
+# MesaDrainageWorker
+# ---------------------------------------------------------------------------
+
+
+class MesaDrainageWorker(mesa.Agent):
+    """Mesa-compatible drainage worker reducing local flood congestion under rain."""
+
+    def __init__(
+        self,
+        model: UrbanModel,
+        worker_id: int,
+        base_node: str,
+    ) -> None:
+        super().__init__(model)
+        self.worker_id = worker_id
+        self.base_node = base_node
+        self.current_location = base_node
+        self.is_busy: bool = False
+
+    def step(self) -> None:
+        net = self.model.network
+        rain = net.weather_rain_intensity
+
+        if rain > 0.1:
+            self.is_busy = True
+            # Mitigate local weather congestion
+            net.drained_nodes.add(str(self.current_location))
+        else:
+            self.is_busy = False
+
+    def reset_for_new_day(self) -> None:
+        self.current_location = self.base_node
+        self.is_busy = False
+
+
+# ---------------------------------------------------------------------------
+# MesaTrafficPolice
+# ---------------------------------------------------------------------------
+
+
+class MesaTrafficPolice(mesa.Agent):
+    """Mesa-compatible traffic police officer boosting intersection capacities."""
+
+    def __init__(
+        self,
+        model: UrbanModel,
+        police_id: int,
+        intersection_node: str,
+    ) -> None:
+        super().__init__(model)
+        self.police_id = police_id
+        self.intersection_node = intersection_node
+        self.current_location = intersection_node
+
+    def step(self) -> None:
+        # Boost local intersection capacity
+        self.model.network.traffic_police_nodes.add(str(self.current_location))
+
+    def reset_for_new_day(self) -> None:
+        pass

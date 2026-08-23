@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from app.models.schemas import ScenarioConfig
-from simulation.engine import MesaSimEngine, UrbanModel
-from simulation.calibration import (
-    validate_mode_share,
-    validate_avg_commute,
-    DELHI_CALIBRATION_TARGETS,
-)
 from simulation.agents import CitizenAgent
+from simulation.calibration import (
+    DELHI_CALIBRATION_TARGETS,
+    validate_avg_commute,
+    validate_mode_share,
+)
+from simulation.engine import MesaSimEngine, UrbanModel
 
 
 def test_bus_load_pct_in_snapshot():

@@ -1,0 +1,93 @@
+"use client";
+import { cn } from "../../utils/cn";
+import { motion, AnimatePresence } from "framer-motion";
+import type { ReactNode } from "react";
+import { X } from "lucide-react";
+import { GlassTopHighlight } from "./GlassTopHighlight";
+import {
+  useLiquidOverlayVariants,
+  useLiquidTransition,
+  useLiquidTapScale,
+  useGlassOverlayRootStyle,
+} from "./useLiquidMotion";
+
+interface LiquidGlassModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  children: ReactNode;
+  className?: string;
+  title?: string;
+  size?: "sm" | "md" | "lg" | "xl";
+}
+
+const sizeStyles = {
+  sm: "max-w-sm",
+  md: "max-w-md",
+  lg: "max-w-lg",
+  xl: "max-w-xl",
+};
+
+export function LiquidGlassModal({
+  isOpen,
+  onClose,
+  children,
+  className,
+  title,
+  size = "md",
+}: LiquidGlassModalProps) {
+  const overlayVariants = useLiquidOverlayVariants();
+  const tapScale = useLiquidTapScale();
+  const overlayRef = useGlassOverlayRootStyle(isOpen);
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          ref={overlayRef}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={onClose}
+        >
+          {/* Backdrop */}
+          <div className="glass-backdrop" />
+
+          {/* Modal */}
+          <motion.div
+            {...overlayVariants}
+            transition={useLiquidTransition()}
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "relative w-full",
+              "glass-blur-xl glass-surface glass-border glass-highlight-strong",
+              "rounded-3xl overflow-hidden",
+              sizeStyles[size],
+              className
+            )}
+          >
+            {/* Top highlight */}
+            <GlassTopHighlight className="inset-x-0 top-0" opacity={0.3} />
+            {/* Reflection */}
+            <div className="pointer-events-none absolute -top-10 -right-10 h-32 w-32 rounded-full bg-[var(--lg-border-subtle)] blur-2xl" />
+
+            {title && (
+              <div className="flex items-center justify-between px-6 pt-6 pb-2">
+                <h3 className="text-lg font-semibold text-[var(--lg-text)]">{title}</h3>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: tapScale }}
+                  onClick={onClose}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--lg-border-subtle)] text-[var(--lg-text-muted)] hover:bg-[var(--lg-border)] hover:text-[var(--lg-text-secondary)] transition-colors"
+                >
+                  <X size={16} />
+                </motion.button>
+              </div>
+            )}
+            <div className="p-6">{children}</div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

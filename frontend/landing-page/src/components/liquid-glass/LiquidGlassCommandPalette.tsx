@@ -1,0 +1,190 @@
+"use client";
+import { cn } from "../../utils/cn";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Search, Command } from "lucide-react";
+import { GlassTopHighlight } from "./GlassTopHighlight";
+import {
+  useLiquidOverlayVariants,
+  useLiquidTransition,
+  useGlassOverlayRootStyle,
+} from "./useLiquidMotion";
+
+interface CommandItem {
+  id: string;
+  label: string;
+  shortcut?: string;
+  icon?: React.ReactNode;
+  category?: string;
+  onSelect?: () => void;
+}
+
+interface LiquidGlassCommandPaletteProps {
+  isOpen: boolean;
+  onClose: () => void;
+  items: CommandItem[];
+  placeholder?: string;
+}
+
+export function LiquidGlassCommandPalette({
+  isOpen,
+  onClose,
+  items,
+  placeholder = "Type a command or search...",
+}: LiquidGlassCommandPaletteProps) {
+  const overlayVariants = useLiquidOverlayVariants();
+  const transition = useLiquidTransition();
+  const overlayRef = useGlassOverlayRootStyle(isOpen);
+  const [query, setQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return items;
+    const q = query.toLowerCase();
+    return items.filter(
+      (i) =>
+        i.label.toLowerCase().includes(q) ||
+        i.category?.toLowerCase().includes(q)
+    );
+  }, [query, items]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, CommandItem[]>();
+    filtered.forEach((item) => {
+      const cat = item.category || "General";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(item);
+    });
+    return map;
+  }, [filtered]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setQuery("");
+      setSelectedIndex(0);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((i) => Math.max(i - 1, 0));
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const item = filtered[selectedIndex];
+        if (item) {
+          item.onSelect?.();
+          onClose();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isOpen, filtered, selectedIndex, onClose]);
+
+  let globalIndex = 0;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          ref={overlayRef}
+          className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] px-4"
+          onClick={onClose}
+        >
+          <div className="glass-backdrop" />
+          <motion.div
+            {...overlayVariants}
+            transition={transition}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-xl overflow-hidden rounded-2xl glass-blur-xl glass-surface glass-border glass-highlight-strong"
+          >
+            {/* Top highlight */}
+            <GlassTopHighlight className="inset-x-0 top-0" opacity={0.3} />
+
+            {/* Search input */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--lg-border-subtle)]">
+              <Search size={18} className="text-[var(--lg-text-muted)] flex-shrink-0" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setSelectedIndex(0);
+                }}
+                placeholder={placeholder}
+                className="flex-1 bg-transparent text-[var(--lg-text)] placeholder-[var(--lg-text-muted)] outline-none text-sm"
+              />
+              <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--lg-border-subtle)] text-[var(--lg-text-muted)] text-xs">
+                <Command size={10} />
+                <span>K</span>
+              </div>
+            </div>
+
+            {/* Results */}
+            <div className="max-h-[50vh] overflow-y-auto py-2">
+              {filtered.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm text-[var(--lg-text-muted)]">
+                  No results found
+                </div>
+              ) : (
+                Array.from(grouped.entries()).map(([category, catItems]) => (
+                  <div key={category}>
+                    <div className="px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--lg-text-muted)]">
+                      {category}
+                    </div>
+                    {catItems.map((item) => {
+                      const idx = globalIndex++;
+                      const isSelected = idx === selectedIndex;
+                      return (
+                        <motion.button
+                          key={item.id}
+                          onMouseEnter={() => setSelectedIndex(idx)}
+                          onClick={() => {
+                            item.onSelect?.();
+                            onClose();
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors",
+                            isSelected
+                              ? "bg-[var(--lg-border)]"
+                              : "hover:bg-[var(--lg-border-subtle)]"
+                          )}
+                        >
+                          {item.icon && (
+                            <span className="text-[var(--lg-text-muted)]">{item.icon}</span>
+                          )}
+                          <span className="flex-1 text-sm text-[var(--lg-text-secondary)]">
+                            {item.label}
+                          </span>
+                          {item.shortcut && (
+                            <span className="text-xs text-[var(--lg-text-muted)] px-1.5 py-0.5 rounded bg-[var(--lg-border-subtle)]">
+                              {item.shortcut}
+                            </span>
+                          )}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

@@ -1,99 +1,36 @@
-# Pravaah — Urban Policy & Climate Simulation Dashboard (SUB-06)
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-This is the front-end dashboard application for the **Urban Intelligence Platform (UIP)** (working title: **Pravaah**).
+## Getting Started
 
-It surfaces the complex underlying commuter agency and climate stress simulations as a dense, legible, and highly premium analytical dashboard designed to help researchers, policy makers, and external reviewers reason about a city under stress.
+First, run the development server:
 
-## 🌟 Visual Core & Design System
-
-The visual language follows the **Bloomberg Terminal + NYT Interactive** design canon:
-- **HSL-based Theme**: Deep cosmic space backgrounds (`hsl(222, 47%, 4%)`) with rich glassmorphism.
-- **Color Discipline**: Very high contrast color mappings used sparingly to convey status (Neon Metro Blue, Indigo Bus Accents, Amber Congestion, Crimson Flood warnings).
-- **Legible Typography**: Using `Plus Jakarta Sans` for labels/UI grids and `JetBrains Mono` for clocks, metrics, and telemetry readings.
-- **60 FPS Graphics Engine**: Powered by an HTML5 canvas overlay system displaying thousands of simulated agents as animating micro-particles traveling along a concentric-radial road and rail network.
-
-## 🛠️ Features Implemented
-
-1. **Simulated Sandbox & Live Modes**:
-   - **Live Connected**: Instantly connects to the FastAPI uvicorn backend via WebSockets (`ws://localhost:8000/ws/scenarios/{id}`) to stream real tick frames, congestion states, weather, and incidents.
-   - **Demo Sandbox (Fallback)**: If the backend is offline, the UI automatically transitions to a gorgeous, self-contained mock tick loop that demonstrates monsoon rain progression, road speed decay, and passenger redirection in real time!
-2. **Policy Controls Sidebar**:
-   - Two-way bound range sliders for **Extra Bus Capacity**, **Metro Frequency Boost**, and **Congestion Fees**.
-   - Segmented toggle badges for **Work From Home (WFH) Mandates**.
-   - Automated message logs parsing active incidents, rainfall announcements, and policy applications.
-3. **Telemetric Analytics**:
-   - Time-series bar charts tracking Average Delay, Transit Mode Share, Gridlock Index, and Metro Station Overcapacity.
-   - Automated delta comparison metrics (comparing previous ticks against current).
-4. **Before/After Split Screen Comparison**:
-   - A dedicated **Compare View** togglable with one click, morphing the grid panels into a side-by-side comparative analysis of a normal baseline day vs. the active stressed scenario run.
-
-## 📁 Directory Structure
-
-```
-frontend/
-├── index.html                  # Semantic HTML & layout scaffolding
-├── package.json                # Project node packages
-├── tsconfig.json               # Strict TypeScript compilation rules
-├── src/
-│   ├── main.ts                 # App entrypoint and bootstrapper
-│   ├── style.css               # Imports compiled sheets
-│   ├── styles/                 # Subsystem modules styles
-│   │   ├── variables.css       # HSL palette, spacing scale, transitions
-│   │   ├── reset.css           # Global resets and custom scrollbars
-│   │   ├── dashboard.css       # Screen grids and card classes
-│   │   ├── map.css             # Floating map overlays and legends
-│   │   ├── charts.css          # Analytics, bar containers, split view
-│   │   └── policy.css          # Slider ranges and toggle buttons
-│   ├── map/
-│   │   └── map.ts              // HTML5 Canvas spatial particle renderer
-│   ├── charts/
-│   │   └── charts.ts           // Lightweight sparkline and telemetry update manager
-│   ├── policy/
-│   │   └── policy.ts           // Interactive controls and slider models
-│   └── components/
-│       └── dashboard.ts        // Coordinator routing state & socket listeners
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## 🚀 Quick Start & Development
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-2. Start local dev server:
-   ```bash
-   npm run dev
-   ```
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-3. Build production optimization:
-   ```bash
-   npm run build
-   ```
+## Learn More
 
-## 🔗 Running with the live backend
+To learn more about Next.js, take a look at the following resources:
 
-For Live Connected mode, the SUB-05 backend must be reachable at `http://localhost:8000`:
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-```powershell
-# In a separate terminal
-cd ../backend
-.\.venv\Scripts\Activate.ps1     # one-time: see backend/README.md for venv setup
-uvicorn app.main:app --port 8000
-```
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-Then `npm run dev` here. The dashboard will:
+## Deploy on Vercel
 
-- `GET /api/v1/scenarios` to resolve the selected scenario *name* (`scenario_a_monsoon`)
-  to the backend *id* (`scenario_0001`).
-- `POST /api/v1/scenarios/{id}/start` to make sure it's ticking.
-- Open `ws://localhost:8000/ws/scenarios/{id}` for live `TickDiff` frames.
-- After 8 ticks of baseline, auto-inject the scenario's archetypal event
-  (`WEATHER_EVENT` for monsoon, `INFRASTRUCTURE_EVENT` for metro shutdown,
-  `POLICY_EVENT` for fuel shock) so you immediately see real dynamics.
-- Drive the play/pause buttons via REST (`/start`, `/pause`, `/resume`).
-- Send policy slider changes as `POLICY_EVENT` frames over the WebSocket,
-  debounced to 300 ms.
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-If the backend is unreachable, the dashboard transparently falls back to the
-local mock tick loop.
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

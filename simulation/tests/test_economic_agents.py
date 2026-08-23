@@ -1,12 +1,12 @@
 import pytest
-from simulation.engine import UrbanModel
+from app.models.schemas import ScenarioConfig
 from simulation.economic_agents import (
+    MesaDeliveryAgent,
     MesaStallOwner,
     MesaStoreManager,
     MesaStoreStaff,
-    MesaDeliveryAgent,
 )
-from app.models.schemas import ScenarioConfig
+from simulation.engine import UrbanModel
 
 
 @pytest.fixture
@@ -92,3 +92,76 @@ def test_dynamic_restock_time(base_config):
 
     assert stall.inventory > 0.0
     assert stall.cash_balance < 1000.0  # Spent money on restock
+
+
+def test_enforcement_officer_evicts_stall(base_config):
+    """Test that Enforcement Officer fines and evicts a roadside stall at the same node."""
+    from simulation.economic_agents import MesaEnforcementOfficer
+    model = UrbanModel(base_config)
+
+    stall = next(a for a in model.schedule.agents if isinstance(a, MesaStallOwner))
+    target_node = stall.current_location
+
+    officer = MesaEnforcementOfficer(
+        model=model,
+        officer_id=9999,
+        patrol_nodes=[str(target_node)]
+    )
+
+    initial_cash = stall.cash_balance
+    initial_frustration = stall.retail_memory.frustration
+
+    # Step officer at the same location as stall
+    officer.step()
+
+    # Stall should be fined ₹100
+    assert stall.cash_balance == initial_cash - 100.0
+    # Stall frustration should increase by 2.0 (eviction)
+    assert stall.retail_memory.frustration > initial_frustration
+    # Stall should have relocated to a candidate node
+    assert stall.current_location != target_node
+
+
+def test_drainage_worker_mitigates_flooding(base_config):
+    """Test that Drainage Worker adds its node to network's drained_nodes set under rain."""
+    from simulation.economic_agents import MesaDrainageWorker
+    model = UrbanModel(base_config)
+
+    worker = MesaDrainageWorker(
+        model=model,
+        worker_id=8888,
+        base_node="node_0_0"
+    )
+
+    # Set rain intensity
+    model.network.weather_rain_intensity = 0.5
+
+    # Initially, drained_nodes is empty
+    assert "node_0_0" not in model.network.drained_nodes
+
+    # Step worker
+    worker.step()
+
+    # Now, node_0_0 should be registered as drained
+    assert "node_0_0" in model.network.drained_nodes
+
+
+def test_traffic_police_boosts_capacity(base_config):
+    """Test that Traffic Police adds its node to network's traffic_police_nodes set."""
+    from simulation.economic_agents import MesaTrafficPolice
+    model = UrbanModel(base_config)
+
+    police = MesaTrafficPolice(
+        model=model,
+        police_id=7777,
+        intersection_node="node_1_1"
+    )
+
+    # Initially, traffic_police_nodes is empty
+    assert "node_1_1" not in model.network.traffic_police_nodes
+
+    # Step police
+    police.step()
+
+    # Now, node_1_1 should be registered as policed
+    assert "node_1_1" in model.network.traffic_police_nodes

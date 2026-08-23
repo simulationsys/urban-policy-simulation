@@ -60,7 +60,7 @@ class TestOSMNetworkLoading:
         assert len(road_edges) > 3000
 
         # Check a sample edge
-        u, v, data = road_edges[0]
+        _u, _v, data = road_edges[0]
         assert data["type"] == "road"
         assert data["length"] > 0
         assert data["capacity"] > 0

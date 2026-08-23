@@ -156,6 +156,13 @@ class AggregateMetrics(BaseModel):
     aqi_estimate: float = Field(
         0.0, ge=0.0, le=500.0, description="Estimated AQI (0-500) from mode-share emissions."
     )
+    special_agents: list[dict] = Field(
+        default_factory=list,
+        description=(
+            "Locations and states of special agents "
+            "(officers, drainage, police, stalls, stores)."
+        ),
+    )
 
 
 class MetricSeries(BaseModel):

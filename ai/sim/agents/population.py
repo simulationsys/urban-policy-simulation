@@ -16,8 +16,8 @@ from sim.agents.schedule import Activity, ActivitySchedule, ActivityType
 from sim.agents.utility_weights import UtilityWeights
 
 # Vehicle-ownership probability by income bracket (1=lowest .. 5=highest).
-P_CAR_BY_INCOME = {1: 0.02, 2: 0.08, 3: 0.20, 4: 0.45, 5: 0.70}
-P_BIKE_BY_INCOME = {1: 0.10, 2: 0.30, 3: 0.50, 4: 0.55, 5: 0.45}
+P_CAR_BY_INCOME = {1: 0.05, 2: 0.15, 3: 0.30, 4: 0.55, 5: 0.80}
+P_BIKE_BY_INCOME = {1: 0.25, 2: 0.45, 3: 0.65, 4: 0.70, 5: 0.60}
 P_METRO_PASS = 0.25
 
 

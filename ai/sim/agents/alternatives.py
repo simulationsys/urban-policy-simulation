@@ -16,12 +16,12 @@ from sim.agents.modes import Mode
 
 # Per-km rough estimates: (minutes/km, ₹/km, comfort 0..1)
 _PROFILE: dict[Mode, tuple[float, float, float]] = {
-    Mode.WALK:  (12.0, 0.0,  0.30),
-    Mode.BIKE:  (4.0,  0.5,  0.40),
-    Mode.BUS:   (5.0,  1.5,  0.45),
-    Mode.METRO: (3.0,  3.0,  0.65),
-    Mode.AUTO:  (3.5,  12.0, 0.55),
-    Mode.CAR:   (3.0,  8.0,  0.75),
+    Mode.WALK:  (12.0, 0.0,  0.8631),
+    Mode.BIKE:  (4.0,  0.5,  1.0000),
+    Mode.BUS:   (5.0,  1.5,  0.0100),
+    Mode.METRO: (3.0,  3.0,  0.0100),
+    Mode.AUTO:  (3.5,  12.0, 0.9990),
+    Mode.CAR:   (3.0,  8.0,  0.9996),
 }
 
 # How exposed each mode is to rain (0 = sheltered, 1 = fully exposed).

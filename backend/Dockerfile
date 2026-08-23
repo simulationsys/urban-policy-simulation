@@ -25,17 +25,18 @@ RUN pip install --upgrade pip \
     && pip install "mesa>=2.2.0" "numpy>=1.24.0" "networkx>=3.0" "pandas>=2.0.0" "pyarrow>=15.0.0"
 
 # App code + the simulation core it drives.
-COPY backend/app ./app
+COPY backend/app ./backend/app
 COPY simulation/simulation ./simulation/simulation
 
 # Processed street/population data. Optional: if the directory is empty the engine falls
 # back to its synthetic grid rather than failing (see Settings.resolve_engine_kind).
 COPY data/processed_data ./data/processed_data
 
-# SQLite metadata + any local artifacts live here; mount a volume in prod to persist.
-RUN mkdir -p /app/data
+# Set workspace directory for the backend app runtime
+WORKDIR /app/backend
+RUN mkdir -p /app/backend/data
 
 EXPOSE 8000
 
-# Honor the platform's $PORT if provided (Railway/Render inject it), else 8000.
+# Honor the platform's $PORT if provided, else default to 8000
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

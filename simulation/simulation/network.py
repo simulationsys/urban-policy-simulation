@@ -208,6 +208,8 @@ class MultiModalNetwork:
         self._bus_capacity_multiplier: float = 1.0
         self._fuel_price_delta_paise: int = 0
         self._weather_rain_intensity: float = 0.0
+        self.drained_nodes: set[str] = set()
+        self.traffic_police_nodes: set[str] = set()
 
         # Phase 2: DMRC schedule (SUB-03, task 3.1)
         self._dmrc_schedule: dict[str, DMRCLineSchedule] = {}
@@ -853,17 +855,24 @@ class MultiModalNetwork:
         t_zero = length / free_flow_speed
 
         if edge_type == "road":
-            # Apply weather speed reduction
+            # Apply weather speed reduction and check for drainage mitigation
+            rain = self.weather_rain_intensity
+            if u in self.drained_nodes or v in self.drained_nodes:
+                rain = rain * 0.1  # 90% rain reduction near active drainage crews
+
             # Rain drops car speed by up to 40%
-            weather_mult = 1.0 - 0.40 * self.weather_rain_intensity
+            weather_mult = 1.0 - 0.40 * rain
             speed = free_flow_speed * weather_mult
             t_zero = length / max(1.0, speed)
 
             # Bureau of Public Roads (BPR) formula
             flow = edge_data["flow"]
             capacity = edge_data["capacity"]
+            if u in self.traffic_police_nodes or v in self.traffic_police_nodes:
+                capacity = capacity * 1.5  # 50% capacity boost from traffic police routing
+
             # Weather reduces lane capacity too by up to 30%
-            cap = capacity * (1.0 - 0.30 * self.weather_rain_intensity)
+            cap = capacity * (1.0 - 0.30 * rain)
 
             # Calibrated mixed-traffic BPR formula for Indian roads
             # Mixed-traffic has lower threshold of speed degradation but standard exponential growth
