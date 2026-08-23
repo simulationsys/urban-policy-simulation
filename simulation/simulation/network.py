@@ -186,17 +186,15 @@ class MultiModalNetwork:
     updating dynamic travel times using a BPR congestion model.
     """
 
-    def __init__(self, size: int = 10, spacing: float = 0.005) -> None:
-        """Initialize the synthetic multi-modal Delhi (Rajiv Chowk) grid.
+    def _init_runtime_state(self) -> None:
+        """Initialise the mutable state every network carries, however it was built.
 
-        size: grid size (e.g. 10x10 intersections covering ~5 km)
-        spacing: coordinate distance between adjacent grid intersections (~555 m)
+        ``load_from_osm`` constructs instances through ``cls.__new__`` to skip the synthetic
+        grid builder, so it cannot rely on ``__init__`` running. This used to be a second,
+        hand-maintained copy of the assignments below, and anything added to one and not the
+        other blew up only on the real-data path — which is exactly how ``drained_nodes``
+        came to be missing. Both paths now call this, so the two cannot drift again.
         """
-        self.g = nx.DiGraph()
-        self.size = size
-        self.spacing = spacing
-        self._is_real_data = False
-
         # High-performance routing cache: (source, target, mode) -> path
         self._routing_cache: dict[tuple[str, str, str], list[str] | None] = {}
         # Congestion-sensitive routes, cleared every tick (see clear_dynamic_routing_cache).
@@ -208,6 +206,8 @@ class MultiModalNetwork:
         self._bus_capacity_multiplier: float = 1.0
         self._fuel_price_delta_paise: int = 0
         self._weather_rain_intensity: float = 0.0
+
+        # Per-tick flood response: nodes drained by pumps, junctions being directed.
         self.drained_nodes: set[str] = set()
         self.traffic_police_nodes: set[str] = set()
 
@@ -221,6 +221,19 @@ class MultiModalNetwork:
         # Phase 2: Bus vehicles for bunching simulation (SUB-03, task 3.3)
         self._bus_vehicles: list[BusVehicle] = []
         self._bus_arrival_log: dict[str, list[int]] = {}  # stop_node → [tick]
+
+    def __init__(self, size: int = 10, spacing: float = 0.005) -> None:
+        """Initialize the synthetic multi-modal Delhi (Rajiv Chowk) grid.
+
+        size: grid size (e.g. 10x10 intersections covering ~5 km)
+        spacing: coordinate distance between adjacent grid intersections (~555 m)
+        """
+        self.g = nx.DiGraph()
+        self.size = size
+        self.spacing = spacing
+        self._is_real_data = False
+
+        self._init_runtime_state()
 
         # Bounding box (computed dynamically for real data)
         self._lat_min: float = CITY_LAT - (size / 2) * spacing
@@ -275,18 +288,7 @@ class MultiModalNetwork:
         net.size = 0
         net.spacing = 0.0
         net._is_real_data = True
-        net._routing_cache = {}
-        net._dynamic_routing_cache = {}
-        net._static_weight_modes_built = set()
-        net._disabled_metro_lines = set()
-        net._bus_capacity_multiplier = 1.0
-        net._fuel_price_delta_paise = 0
-        net._weather_rain_intensity = 0.0
-        net._dmrc_schedule = {}
-        net._metro_riders_this_tick = {}
-        net._metro_denied_this_tick = 0
-        net._bus_vehicles = []
-        net._bus_arrival_log = {}
+        net._init_runtime_state()
 
         # --- Convert OSM MultiDiGraph → our internal DiGraph ---
         net._load_osm_road_graph(osm_graph)
