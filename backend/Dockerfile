@@ -1,21 +1,36 @@
-# Backend (SUB-05) container. Single-stage, slim.
-# Built with the project root as context to bundle the simulation dependency.
+# Backend (SUB-05) container.
+#
+# Build context is the REPOSITORY ROOT, not backend/ — the backend serves the simulation
+# core, so the image has to contain it:
+#     docker build -f backend/Dockerfile -t uip-backend .
+#
+# Building from backend/ alone produces an image that can only ever run the stub engine,
+# which streams plausible metrics while simulating no citizens at all.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    # The simulation package is copied in, not pip-installed, so it must be importable.
+    PYTHONPATH=/app/simulation
 
 WORKDIR /app
 
-# Copy simulation and backend codebases
-COPY simulation ./simulation
-COPY backend ./backend
+# Install deps first for better layer caching. The simulation core needs a compiler-free
+# scientific stack (mesa, networkx, pandas, pyarrow); osmnx is intentionally NOT installed
+# because the graph is prepared offline by data/pipelines and shipped as GraphML.
+COPY backend/pyproject.toml ./backend/pyproject.toml
+RUN pip install --upgrade pip \
+    && pip install ./backend \
+    && pip install "mesa>=2.2.0" "numpy>=1.24.0" "networkx>=3.0" "pandas>=2.0.0" "pyarrow>=15.0.0"
 
-# Install pip packages
-RUN pip install --upgrade pip && \
-    pip install ./simulation && \
-    pip install ./backend
+# App code + the simulation core it drives.
+COPY backend/app ./backend/app
+COPY simulation/simulation ./simulation/simulation
+
+# Processed street/population data. Optional: if the directory is empty the engine falls
+# back to its synthetic grid rather than failing (see Settings.resolve_engine_kind).
+COPY data/processed_data ./data/processed_data
 
 # Set workspace directory for the backend app runtime
 WORKDIR /app/backend

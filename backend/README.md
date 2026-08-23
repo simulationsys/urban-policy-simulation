@@ -36,19 +36,47 @@ cd backend
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 copy .env.example .env
+$env:PYTHONPATH = "../simulation"     # so the real engine is importable
 uvicorn app.main:app --reload --port 8000
 ```
 
 - Swagger / OpenAPI docs: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/healthz>
+- Which engine is live: <http://localhost:8000/readyz>
+
+### Which engine am I running? (read this before demoing)
+
+`BACKEND_SIM_ENGINE` defaults to **`auto`**. On boot the backend prints exactly what it chose
+and why:
+
+```
+Backend up: engine=mesa (real engine on real street data from .../data/processed_data)
+```
+
+| Engine | What it means |
+|---|---|
+| `mesa` + real street data | Individual citizens routed along real Delhi streets. What you want. |
+| `mesa`, no processed data | Citizens are simulated, but on a synthetic grid. Run `python data/pipelines/run_all.py`. |
+| `fake` | **The stub.** Plausible metrics, *no citizens at all* — the dashboard shows a "DEMO PLAYBACK — NOT SIMULATED" banner and falls back to canned routes. |
+
+`auto` picks `mesa` only if `simulation.engine` actually imports (mesa, networkx, pandas and
+pyarrow present). Set `BACKEND_SIM_ENGINE=fake` or `=mesa` to force either.
+
+`/readyz` reports the same thing as JSON (`engine`, `real_data`, `simulates_individuals`), which
+is what the dashboard reads to decide whether to warn the user.
 
 ### Try the full loop
 
 ```bash
-# 1. Create a scenario
+# 1. Create a scenario.
+#    use_real_data      -> route citizens along the real OSM street network
+#    start_time_minutes -> 390 = 06:30, so the map has life immediately instead of
+#                          starting at midnight in a sleeping city
+#    max_tracked_agents -> how many agents are streamed individually to the map
 curl -X POST http://localhost:8000/api/v1/scenarios \
   -H "content-type: application/json" \
-  -d '{"config":{"name":"scenario_a_monsoon","city":"delhi","population":5000,"seed":42}}'
+  -d '{"config":{"name":"scenario_a_monsoon","city":"delhi","population":1200,"seed":42,
+       "use_real_data":true,"start_time_minutes":390,"max_tracked_agents":2000}}'
 
 # 2. Start it  (use the id returned above, e.g. scenario_0001)
 curl -X POST http://localhost:8000/api/v1/scenarios/scenario_0001/start
@@ -86,6 +114,28 @@ curl -X POST http://localhost:8000/api/v1/scenarios/scenario_0001/events \
 **REST is for state; WebSocket is for streams.** Full snapshots and history are REST; per-tick diffs
 are streamed. The OpenAPI spec at `/openapi.json` is the contract the frontend consumes — keep it
 accurate.
+
+### What comes down the WebSocket
+
+The first frame after connecting is a **bootstrap**: shaped exactly like a tick, but carrying the
+whole current world (all in-progress legs, all presences, every home, the full grid). Without it a
+client joining mid-run would never learn where anything is, because every later frame is a diff.
+
+Each `tick` frame carries a `TickDiff`:
+
+| Field | Meaning |
+|---|---|
+| `metrics` | aggregates, every tick (cheap) |
+| `changed_cells` | grid cells whose congestion changed — the population-scale channel |
+| `started_legs` | journeys that began this tick: mode, occupation, destination activity, and the **routed polyline** |
+| `finished_agents` | ids whose journey ended |
+| `presences` | stationary agents whose activity changed (citizens *and* stall owners, shopkeepers, shop staff, delivery riders) |
+| `dwellings` | homes not yet sent to this client, keyed by agent id |
+
+A leg is sent **once**, when it starts, with the engine's own travel-time estimate; the client
+animates along the polyline using simulated time. Positions are deliberately *not* streamed per
+tick — a tick is 5 simulated minutes, so per-tick positions would teleport every vehicle. See
+ADR 002 and ADR 007 in `DECISIONS.md`.
 
 ## Tests & lint
 

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Urban Intelligence Platform — Premium Interactive Urban Policy and Climate Stress Simulation Dashboard." />
+    
+    <title>Pravaah — Urban Policy & Climate Simulation</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231e90ff'%3E%3Cpath d='M12 2L2 22h20L12 2zm0 3.99L19.53 19H4.47L12 5.99z'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- HEADER -->
+      <header class="app-header">
+        <div class="header-branding">
+          <div class="header-logo">P</div>
+          <div class="header-title-group">
+            <h1>PRAVAAH</h1>
+            <p>Urban Intelligence & Mobility Simulator</p>
+          </div>
+        </div>
+
+        <!-- Simulation Playback Controls -->
+        <div class="playback-controls">
+          <button class="control-btn" id="playback-prev" title="Step Backward">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+          </button>
+          <button class="control-btn" id="playback-play" title="Play Simulation">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          </button>
+          <button class="control-btn" id="playback-next" title="Step Forward">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+          </button>
+          <div class="sim-time-display" id="sim-clock">08:00 AM</div>
+        </div>
+
+        <div class="header-actions">
+          <div class="connection-badge connected" id="ws-status">Live Connected</div>
+          <select class="dropdown-select" id="scenario-selector">
+            <option value="scenario_a_monsoon">Scenario A: Monsoon Stress Test</option>
+            <option value="scenario_b_metro_shutdown">Scenario B: Metro Shutdown</option>
+            <option value="scenario_c_fuel_shock">Scenario C: Fuel Price Shock</option>
+          </select>
+        </div>
+      </header>
+
+      <!-- MAIN CONTENT WORKSPACE -->
+      <main class="dashboard-grid">
+        <!-- Sidebar - Policies & Settings -->
+        <aside class="sidebar-panel">
+          <!-- Live Stats & Weather Header -->
+          <div class="sidebar-section">
+            <div class="sidebar-section-title">
+              <span>Simulation Status</span>
+              <span id="current-city-badge" style="color: var(--accent); font-weight: 600;">Delhi (NCR)</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin-top: var(--space-2);">
+              <div class="toggle-btn active" id="mode-baseline" style="font-size: 11px;">Baseline</div>
+              <div class="toggle-btn" id="mode-comparison" style="font-size: 11px;">Compare View</div>
+            </div>
+          </div>
+
+          <!-- Policy Intervention Controls -->
+          <div class="sidebar-section">
+            <div class="sidebar-section-title">Policy Interventions</div>
+            
+            <!-- Bus Capacity Slider -->
+            <div class="policy-control-item">
+              <div class="policy-label-row">
+                <span class="policy-name">Extra Bus Capacity</span>
+                <span class="policy-value-bubble" id="val-bus-cap">+0%</span>
+              </div>
+              <input type="range" class="policy-slider" id="slider-bus-cap" min="0" max="100" value="0" />
+            </div>
+
+            <!-- Metro Capacity Slider -->
+            <div class="policy-control-item">
+              <div class="policy-label-row">
+                <span class="policy-name">Metro Frequency Boost</span>
+                <span class="policy-value-bubble" id="val-metro-freq">+0%</span>
+              </div>
+              <input type="range" class="policy-slider" id="slider-metro-freq" min="0" max="80" value="0" />
+            </div>
+
+            <!-- Congestion Pricing Slider -->
+            <div class="policy-control-item">
+              <div class="policy-label-row">
+                <span class="policy-name">Congestion Fee</span>
+                <span class="policy-value-bubble" id="val-congestion-pricing">₹0</span>
+              </div>
+              <input type="range" class="policy-slider" id="slider-congestion-pricing" min="0" max="250" value="0" step="10" />
+            </div>
+
+            <!-- WFH Mandate Toggle -->
+            <div class="policy-control-item" style="margin-top: var(--space-4);">
+              <div class="policy-label-row">
+                <span class="policy-name">Work From Home (WFH)</span>
+                <span class="policy-value-bubble" id="val-wfh">Off</span>
+              </div>
+              <div class="toggle-group">
+                <button class="toggle-btn active" id="toggle-wfh-off">Inactive</button>
+                <button class="toggle-btn" id="toggle-wfh-on">30% WFH</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Scenario Parameters / Information -->
+          <div class="sidebar-section">
+            <div class="sidebar-section-title">Scenario Parameters</div>
+            <div id="scenario-details" style="font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6;">
+              Heavy rain falls over the city starting 08:00 AM. Commuters faces slowed roads, shifting mode choices dramatically towards public transit.
+            </div>
+          </div>
+
+          <!-- Live Event log -->
+          <div class="sidebar-section" style="flex: 1; min-height: 200px;">
+            <div class="sidebar-section-title">Simulated Incidents</div>
+            <div class="event-feed-list" id="event-feed">
+              <!-- Dynamically populated -->
+              <div class="event-feed-item info">
+                <div class="event-time">08:00:00 AM</div>
+                <div class="event-desc">Simulation initialized using synthetic population (10,000 agents)</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Right Workspace (Map + Bottom Analytics) -->
+        <section class="workspace-container" id="workspace">
+          <!-- TOP: Map View -->
+          <div class="map-view-wrapper">
+            <!-- Weather overlay info -->
+            <div class="weather-status-widget">
+              <div class="weather-indicator-glow" id="weather-indicator"></div>
+              <span id="weather-text">Weather: Clear</span>
+            </div>
+
+            <!-- Floating Left Controls -->
+            <div class="map-floating-panel map-controls-left">
+              <button class="layer-btn active" id="layer-network" title="Toggle Road Network">Road Speed Network</button>
+              <button class="layer-btn active" id="layer-agents" title="Toggle Active Agents">Agent Congestion</button>
+              <button class="layer-btn active" id="layer-transit" title="Toggle Transit Lines">Transit Overlay</button>
+              <button class="layer-btn" id="layer-flood" title="Toggle Water Level Layer">Flooded Zones</button>
+            </div>
+
+            <!-- Map mock background & canvas -->
+            <div class="map-canvas-mockup"></div>
+            <canvas id="map-canvas" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+
+            <!-- Floating Right Legend -->
+            <div class="map-floating-panel map-legend">
+              <div class="legend-title">Density Heatmap</div>
+              <div class="legend-list">
+                <div class="legend-item">
+                  <span>Metro Overcrowd</span>
+                  <span class="legend-color metro"></span>
+                </div>
+                <div class="legend-item">
+                  <span>Bus Ridership</span>
+                  <span class="legend-color bus"></span>
+                </div>
+                <div class="legend-item">
+                  <span>Road Congestion</span>
+                  <span class="legend-color road"></span>
+                </div>
+                <div class="legend-item">
+                  <span>Flooded Areas</span>
+                  <span class="legend-color flood"></span>
+                </div>
+              </div>
+              <div class="legend-color-bar">
+                <div class="color-bar-step" style="background: hsla(210, 100%, 60%, 0.1);"></div>
+                <div class="color-bar-step" style="background: hsla(210, 100%, 60%, 0.3);"></div>
+                <div class="color-bar-step" style="background: hsla(210, 100%, 60%, 0.6);"></div>
+                <div class="color-bar-step" style="background: hsla(210, 100%, 60%, 0.9);"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BOTTOM: Analytics / Chart Strip -->
+          <div class="charts-strip">
+            <div class="charts-strip-header">
+              <div class="charts-strip-title">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg>
+                Key Performance Metrics
+              </div>
+              <div style="font-size: var(--fs-xs); color: var(--text-muted);" id="sim-status-indicator">
+                Ticking at 1.0s / step
+              </div>
+            </div>
+            
+            <div class="charts-grid" id="analytics-grid">
+              <!-- Stat 1: Commute Delay -->
+              <div class="chart-card">
+                <div class="chart-card-header">
+                  <span>AVG COMMUTE DELAY</span>
+                  <span class="chart-delta stable" id="stat-delay-delta">0m</span>
+                </div>
+                <div class="chart-value-display" id="stat-delay">18.5m</div>
+                <div class="bar-chart-container" id="chart-delay-bars">
+                  <!-- Generated dynamic bar columns -->
+                </div>
+              </div>
+
+              <!-- Stat 2: Transit Mode Share -->
+              <div class="chart-card">
+                <div class="chart-card-header">
+                  <span>TRANSIT MODE SHARE</span>
+                  <span class="chart-delta stable" id="stat-share-delta">0%</span>
+                </div>
+                <div class="chart-value-display" id="stat-share">34.2%</div>
+                <div class="bar-chart-container" id="chart-share-bars">
+                  <!-- Columns -->
+                </div>
+              </div>
+
+              <!-- Stat 3: Gridlock Index -->
+              <div class="chart-card">
+                <div class="chart-card-header">
+                  <span>GRIDLOCK INDEX</span>
+                  <span class="chart-delta stable" id="stat-gridlock-delta">0%</span>
+                </div>
+                <div class="chart-value-display" id="stat-gridlock">12%</div>
+                <div class="bar-chart-container" id="chart-gridlock-bars">
+                  <!-- Columns -->
+                </div>
+              </div>
+
+              <!-- Stat 4: Metro Overcrowding -->
+              <div class="chart-card">
+                <div class="chart-card-header">
+                  <span>METRO STATIONS AT CAP</span>
+                  <span class="chart-delta stable" id="stat-metro-delta">0</span>
+                </div>
+                <div class="chart-value-display" id="stat-metro">0 / 42</div>
+                <div class="bar-chart-container" id="chart-metro-bars">
+                  <!-- Columns -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

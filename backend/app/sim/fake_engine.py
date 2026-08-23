@@ -39,6 +39,8 @@ class FakeSimEngine:
     def __init__(self, config: ScenarioConfig) -> None:
         self.config = config
         self._tick = 0
+        # Mirror the real engine's clock offset so both engines agree on the time.
+        self._start_minutes = int(getattr(config, "start_time_minutes", 0) or 0)
         self._rng = random.Random(config.seed)
 
         # Mutable world parameters that events can change.
@@ -55,6 +57,9 @@ class FakeSimEngine:
             for r in range(_GRID_ROWS)
             for c in range(_GRID_COLS)
         ]
+
+    def _sim_minutes(self) -> int:
+        return self._start_minutes + self._tick * self.config.tick_minutes
 
     # --- SimEngine Protocol --------------------------------------------------------------
     @property
@@ -76,7 +81,7 @@ class FakeSimEngine:
         return Snapshot(
             scenario_id="",  # filled in by the scenario manager
             tick=self._tick,
-            sim_time_minutes=self._tick * self.config.tick_minutes,
+            sim_time_minutes=self._sim_minutes(),
             status=ScenarioStatus.running,
             metrics=self._compute_metrics(),
             grid=list(self._cells),
@@ -111,7 +116,7 @@ class FakeSimEngine:
 
     def _day_phase(self) -> float:
         """Commute intensity in [0,1] across a 24h day with morning/evening peaks."""
-        minutes = (self._tick * self.config.tick_minutes) % (24 * 60)
+        minutes = self._sim_minutes() % (24 * 60)
         hour = minutes / 60.0
         morning = math.exp(-((hour - 9.0) ** 2) / 2.0)
         evening = math.exp(-((hour - 18.0) ** 2) / 2.5)
@@ -168,7 +173,7 @@ class FakeSimEngine:
 
         return AggregateMetrics(
             tick=self._tick,
-            sim_time_minutes=self._tick * self.config.tick_minutes,
+            sim_time_minutes=self._sim_minutes(),
             rain_intensity=round(rain, 3),
             avg_commute_minutes=round(avg_commute, 2),
             mode_share={m: round(v, 4) for m, v in share.items()},

@@ -34,6 +34,46 @@ cp .env.example .env
 docker-compose up --build
 ```
 
+> The backend image builds from the **repository root** (`docker build -f backend/Dockerfile .`)
+> because it has to contain the simulation core and its processed data. An image built from
+> `backend/` alone can only ever run the stub engine.
+
+### Running it locally with the real simulation
+
+```bash
+# 1. Build the Delhi street network + census-derived population (once, ~20s)
+python data/pipelines/run_all.py
+```
+
+```bash
+# 2. Backend — PYTHONPATH makes the simulation core importable
+cd backend && PYTHONPATH=../simulation uvicorn app.main:app --port 8000
+```
+
+```bash
+# 3. Frontend — point NEXT_PUBLIC_BACKEND_URL at the backend, then:
+cd frontend && npm run dev
+```
+
+**Check what you are actually watching.** The engine is chosen automatically and reported at
+`/readyz` and in the boot log. If the dashboard shows an amber **"DEMO PLAYBACK — NOT SIMULATED"**
+banner, the backend is running the stub: the vehicles on the map are pre-recorded routes and no
+citizen is being simulated. See `backend/README.md` for the engine table.
+
+### What you can see once it is running
+
+- Individual citizens routed along **real streets**, choosing between walking, cycling, bus,
+  metro, auto, e-rickshaw and car — with the whole population underneath as a density grid.
+- Each citizen's **home**, sized by what their income affords, from a jhuggi to a bungalow.
+- **Household life**: click someone at home to watch the day's chores, or step inside to a
+  labelled floor plan where they stand in the room the chore belongs to.
+- The **working city**: stall owners, shopkeepers, shop staff and delivery riders, with their
+  stock, takings and deliveries.
+- Detail is revealed as you zoom in; a legend shows what the current zoom is hiding.
+
+Architectural decisions — including why legs rather than positions are streamed, and why
+vehicles follow street geometry — are recorded in [DECISIONS.md](DECISIONS.md).
+
 See [docs/](docs/) for detailed setup and architecture.
 
 ## Contributing

@@ -140,19 +140,36 @@ class TestRealDataRouting:
         assert 2.0 < travel_time < 60.0
 
     def test_routing_cache_works(self):
-        """Verify routing cache populates and invalidates."""
+        """Verify routing cache populates and invalidates.
+
+        Car routes cost depends on live congestion, so they live in the dynamic cache and
+        are dropped whenever traffic flow is recomputed; walk routes have a fixed cost and
+        survive. See ADR 004 in DECISIONS.md.
+        """
         net = MultiModalNetwork.load_from_osm(str(_GRAPHML))
 
         node_a = net.get_nearest_node(28.632, 77.219)
         node_b = net.get_nearest_node(28.635, 77.222)
 
-        assert len(net._routing_cache) == 0
+        assert len(net._dynamic_routing_cache) == 0
         net.find_shortest_path(node_a, node_b, "car")
+        assert len(net._dynamic_routing_cache) == 1
+
+        # A walk route is not congestion-sensitive, so it is cached separately.
+        net.find_shortest_path(node_a, node_b, "walk")
         assert len(net._routing_cache) == 1
 
-        # Invalidate
+        # Invalidate: weather changes every mode's costs, so both caches clear.
         net.weather_rain_intensity = 0.5
+        assert len(net._dynamic_routing_cache) == 0
         assert len(net._routing_cache) == 0
+
+        # A congestion update only drops the congestion-sensitive routes.
+        net.find_shortest_path(node_a, node_b, "car")
+        net.find_shortest_path(node_a, node_b, "walk")
+        net.update_road_congestion([])
+        assert len(net._dynamic_routing_cache) == 0
+        assert len(net._routing_cache) == 1
 
 
 @pytest.mark.skipif(

@@ -125,7 +125,28 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Run the OSM Network Pipeline
+### 2. Build everything in one command (recommended)
+
+```bash
+python pipelines/run_all.py
+```
+
+Runs every pipeline in dependency order, skipping steps whose outputs already exist
+(`--force` rebuilds regardless). Takes ~20 s from empty.
+
+> **Why a runner, and not just running the scripts by hand:** the synthetic population stores
+> **OSM node ids**, so it is only valid for the network it was generated against. OSM changes
+> daily and the connected-component trim moves with it, so rebuilding `network.graphml` without
+> rebuilding the population leaves agents pointing at nodes that no longer exist. `run_all.py`
+> knows that dependency and rebuilds the population whenever the network changes. (The engine
+> also repairs stale references defensively and tells you how many it had to reassign — but
+> that is a safety net, not a substitute for consistent data.)
+
+**Until these outputs exist, the simulation falls back to a 10×10 synthetic lattice** and
+citizens travel in straight lines between grid points instead of along Delhi's streets. The
+dashboard says so explicitly when that happens.
+
+### 2b. Run an individual pipeline
 
 ```bash
 python pipelines/1_download_osm_network.py
