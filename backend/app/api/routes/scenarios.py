@@ -101,7 +101,10 @@ def branch_scenario(
         ) from exc
 
 
-@router.delete("/{scenario_id}", status_code=status.HTTP_204_NO_CONTENT)
+# response_model=None is required: with `from __future__ import annotations` the `-> None`
+# return annotation reaches FastAPI as a type it treats as a response body, which a 204
+# must not have.
+@router.delete("/{scenario_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def delete_scenario(
     scenario_id: str, manager: ScenarioManager = Depends(get_scenario_manager)
 ) -> None:

@@ -40,6 +40,15 @@ class DataPaths:
             self.weather,
         )
 
+    def required(self) -> tuple[Path, ...]:
+        """Inputs a real-data run cannot start without.
+
+        Transit and weather files are genuinely optional — ``MultiModalNetwork.load_from_osm``
+        accepts ``None`` for both, and the engine falls back to its DMRC schedule. Demanding
+        them would block real-road simulation on files no pipeline produces yet.
+        """
+        return (self.road_network, self.population)
+
 
 @runtime_checkable
 class SimEngine(Protocol):

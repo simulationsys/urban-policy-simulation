@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from app.models.schemas import Event, WSMessage, WSMessageType
+from app.models.schemas import Event, TickDiff, WSMessage, WSMessageType
 from app.services.scenario_manager import ScenarioManager
 from app.ws.manager import ConnectionManager
 
@@ -43,6 +43,30 @@ async def scenario_stream(websocket: WebSocket, scenario_id: str) -> None:
             status=summary.status if summary else None,
         ).model_dump_json()
     )
+
+    # Bootstrap frame: the per-tick diffs only carry *changes*, so a client that connects
+    # mid-run would never learn where the homes are or who is already on the road. Send the
+    # current world once, shaped exactly like a tick so the client has one code path.
+    try:
+        snap = manager.current_snapshot(scenario_id)
+        await websocket.send_text(
+            WSMessage(
+                type=WSMessageType.tick,
+                scenario_id=scenario_id,
+                tick=snap.tick,
+                diff=TickDiff(
+                    scenario_id=scenario_id,
+                    tick=snap.tick,
+                    metrics=snap.metrics,
+                    changed_cells=snap.grid,
+                    started_legs=snap.agent_legs,
+                    presences=snap.presences,
+                    dwellings=snap.dwellings,
+                ),
+            ).model_dump_json()
+        )
+    except Exception:  # pragma: no cover - never block the stream on the bootstrap
+        logger.exception("Failed to send bootstrap frame for %s", scenario_id)
 
     # One task drains queued frames to the socket; the main coroutine reads inbound events.
     pump_task = asyncio.create_task(ws_manager.pump(conn))

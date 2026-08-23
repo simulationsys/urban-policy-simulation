@@ -25,8 +25,11 @@ params = {
     "timezone": "auto"
 }
 
-os.makedirs("processed_data", exist_ok=True)
-csv_path = "processed_data/weather_delhi.csv"
+# Resolve against this file, not the caller's CWD — the other pipelines all write to
+# data/processed_data/, and a relative path put this one in data/pipelines/processed_data/.
+OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "processed_data")
+os.makedirs(OUT_DIR, exist_ok=True)
+csv_path = os.path.join(OUT_DIR, "weather_delhi.csv")
 
 def generate_fallback_data(start, end):
     print("Generating fallback weather data...")
