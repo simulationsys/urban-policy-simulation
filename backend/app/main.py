@@ -75,9 +75,7 @@ async def lifespan(app: FastAPI):
                             start_time_minutes=390,
                         )
                     )
-                logger.info(
-                    "Pre-populated default scenarios (use_real_data=%s)", real_data
-                )
+                logger.info("Pre-populated default scenarios (use_real_data=%s)", real_data)
         except Exception as e:
             logger.warning("Failed to pre-populate default scenarios: %s", e)
 

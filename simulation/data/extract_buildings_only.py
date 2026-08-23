@@ -1,5 +1,4 @@
 import osmnx as ox
-import os
 
 print("Starting OSMnx processing for Rajiv Chowk Buildings 800m...")
 center_point = (28.6328, 77.2197)

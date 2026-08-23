@@ -22,7 +22,8 @@ def generate_vector_world():
     for u, v, k, data in G_drive.edges(keys=True, data=True):
         hw = data.get('highway', '')
         if isinstance(hw, list):
-            if 'service' in hw: edges_to_remove.append((u, v, k))
+            if 'service' in hw:
+                edges_to_remove.append((u, v, k))
         elif hw == 'service':
             edges_to_remove.append((u, v, k))
     G_drive.remove_edges_from(edges_to_remove)
