@@ -261,12 +261,12 @@ def test_shortest_path_cache_and_invalidation():
     target = "node_7_7"
 
     # Check cache is initially empty
-    assert len(net._routing_cache) == 0
+    assert len(net._dynamic_routing_cache) == 0
 
     # First query - populates cache
     path1 = net.find_shortest_path(source, target, "car")
     assert path1 is not None
-    assert len(net._routing_cache) == 1
+    assert len(net._dynamic_routing_cache) == 1
 
     # Second query - retrieves from cache
     path2 = net.find_shortest_path(source, target, "car")
@@ -274,15 +274,15 @@ def test_shortest_path_cache_and_invalidation():
 
     # Invalidate cache via weather setter
     net.weather_rain_intensity = 0.5
-    assert len(net._routing_cache) == 0
+    assert len(net._dynamic_routing_cache) == 0
 
     # Query again and verify cache repopulated
     assert net.find_shortest_path(source, target, "car") is not None
-    assert len(net._routing_cache) == 1
+    assert len(net._dynamic_routing_cache) == 1
 
     # Invalidate via congestion update
     net.update_road_congestion([])
-    assert len(net._routing_cache) == 0
+    assert len(net._dynamic_routing_cache) == 0
 
 
 def test_multimodal_routing_and_transfers():
