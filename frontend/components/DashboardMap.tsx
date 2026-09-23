@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import Map from "react-map-gl/mapbox";
 import DeckGL from "@deck.gl/react";
-import { GeoJsonLayer, ColumnLayer, ScatterplotLayer, PolygonLayer, IconLayer, TextLayer } from "@deck.gl/layers";
+import { ColumnLayer, ScatterplotLayer, PolygonLayer, IconLayer, TextLayer } from "@deck.gl/layers";
 import { ScenegraphLayer } from "@deck.gl/mesh-layers";
 import { AmbientLight, DirectionalLight, LightingEffect } from "@deck.gl/core";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -13,10 +13,30 @@ const METRO_SVG = `<svg width="120" height="120" viewBox="0 0 120 120" fill="non
 <circle cx="60" cy="60" r="50" fill="#1F2937" stroke="#06b6d4" stroke-width="4" stroke-dasharray="10 5"/>
 <circle cx="60" cy="60" r="20" fill="#06b6d4"/>
 <text x="60" y="66" fill="white" font-size="22" font-family="sans-serif" font-weight="bold" text-anchor="middle">M</text>
-<text x="60" y="95" fill="white" font-size="12" font-family="sans-serif" font-weight="bold" text-anchor="middle">RAJIV CHOWK</text>
+<text x="60" y="95" fill="white" font-size="12" font-family="sans-serif" font-weight="bold" text-anchor="middle">TIMES SQ</text>
 </svg>`;
 const toDataURL = (svg: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 const METRO_URL = toDataURL(METRO_SVG);
+
+const BUS_ICON = {
+  url: toDataURL(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="256" viewBox="0 0 64 256">
+    <defs><linearGradient id="paint" x1="0" x2="1" y2="1"><stop stop-color="#f4d36f"/><stop offset="1" stop-color="#c68d35"/></linearGradient><linearGradient id="glass" x1="0" x2="0.9" y2="1"><stop stop-color="#c4e2e9"/><stop offset="1" stop-color="#547d89"/></linearGradient></defs>
+    <path d="M8 25 13 11Q32 1 51 11l5 14v206l-5 14Q32 255 13 245l-5-14Z" fill="#111b20" opacity=".5" transform="translate(1 3)"/>
+    <path d="M8 25 13 11Q32 1 51 11l5 14v206l-5 14Q32 255 13 245l-5-14Z" fill="url(#paint)" stroke="#755126" stroke-width="2"/>
+    <path d="M13 30Q32 18 51 30v15H13Z" fill="url(#glass)" stroke="#785c30" stroke-width="2"/>
+    <path d="M13 57h10v137H13zm28 0h10v137H41z" fill="url(#glass)" stroke="#785c30" stroke-width="2"/>
+    <path d="M25 58h14v136H25z" fill="#d7bd76" stroke="#a47b39" stroke-width="1.5"/>
+    <path d="M13 202h38v18H13z" fill="#b7d4d9" stroke="#785c30" stroke-width="2"/>
+    <path d="M16 229h8v4h-8zm24 0h8v4h-8z" fill="#e76b52"/>
+    <path d="M16 21h7v4h-7zm25 0h7v4h-7z" fill="#fff0b8"/>
+    <path d="M4 54h8v25H4zm48 0h8v25h-8zm-48 92h8v25H4zm48 0h8v25h-8z" fill="#182026"/>
+    <path d="M29 65v120" stroke="#f4e6bd" stroke-opacity=".5" stroke-width="2"/>
+  </svg>`),
+  width: 64,
+  height: 256,
+  anchorX: 32,
+  anchorY: 128
+};
 
 interface DashboardMapProps {
   rainIntensity: number; // 0 to 100
@@ -381,20 +401,15 @@ function logActivity(item: any, time: number, text: string) {
 }
 
 const INITIAL_VIEW_STATE = {
-  longitude: 77.2197,
-  latitude: 28.6328,
-  zoom: 16.5,
-  pitch: 50,
-  bearing: 0
+  longitude: -73.9845,
+  latitude: 40.7546,
+  zoom: 14.5,
+  pitch: 62,
+  bearing: -14
 };
 
 const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFee, busCapacity, timeOfDay, activeOverlay, liveAgents, simClock, gridCells = [], presences = [], dwellings = {} }) => {
-  const [roadData, setRoadData] = useState<any>(null);
-  const [rawAgentsData, setRawAgentsData] = useState<any[]>([]);
-  const [parksData, setParksData] = useState<any>(null);
-  const [walkData, setWalkData] = useState<any>(null);
-  const [treeData, setTreeData] = useState<any[]>([]);
-  const [trafficLights, setTrafficLights] = useState<any[]>([]);
+  const trafficLights: any[] = [];
   
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -416,32 +431,32 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
   // *nothing and reports nothing*, so a missing file would silently empty the city — and
   // a static host that answers 404s with index.html returns 200 with HTML, which looks
   // like a success. Verify the glTF magic bytes, and fall back to procedural geometry.
-  const [modelsOk, setModelsOk] = useState<boolean | null>(null);
+  const [modelsReady, setModelsReady] = useState({ car: false, person: false });
   useEffect(() => {
     let cancelled = false;
-    const files = ['/car.glb', '/bus.glb', '/person.glb', '/tree.glb', '/traffic_light.glb'];
-    Promise.all(files.map(async url => {
+    const files = [{ url: '/car.glb', minimumSize: 50000 }, { url: '/person.glb', minimumSize: 5000 }];
+    Promise.all(files.map(async ({ url, minimumSize }) => {
       try {
         const res = await fetch(url);
         if (!res.ok) return false;
-        const head = new Uint8Array(await (await res.blob()).slice(0, 4).arrayBuffer());
-        return String.fromCharCode(...head) === 'glTF';
+        const blob = await res.blob();
+        const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+        return String.fromCharCode(...head) === 'glTF' && blob.size > minimumSize;
       } catch {
         return false;
       }
     })).then(results => {
       if (cancelled) return;
-      const ok = results.every(Boolean);
-      setModelsOk(ok);
-      if (!ok) {
-        console.warn('[map] 3D models unavailable — drawing agents as procedural geometry.');
-      }
+      setModelsReady({ car: results[0], person: results[1] });
+      if (!results[0]) console.warn('[map] Detailed car model unavailable; using map geometry.');
     });
     return () => { cancelled = true; };
   }, []);
 
-  // Until the check resolves, draw the shapes: better a plain city than an empty one.
-  const useModels = modelsOk === true;
+  // Keep the hand-built fallbacks for vehicles without a usable mesh.
+  const useModels = false;
+  const useCarModel = modelsReady.car;
+  const usePersonModel = modelsReady.person;
 
   // Stationary citizens, reachable from the animation loop without re-subscribing it.
   const stationaryRef = useRef<Record<string, any>>({});
@@ -460,49 +475,6 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
     });
     stationaryRef.current = byId;
   }, [presences]);
-
-  useEffect(() => {
-    fetch('/rajiv_chowk_roads.json').then(res => res.json()).then(data => setRoadData(data));
-    fetch('/rajiv_chowk_walk.json').then(res => res.json()).then(data => setWalkData(data));
-    fetch('/rajiv_chowk_agents.json').then(res => res.json()).then(data => setRawAgentsData(data));
-    // Buildings are not fetched: the Mapbox Standard style already renders Delhi's 3D
-    // buildings natively, so pulling the 9 MB local copy only to discard it was waste.
-    fetch('/rajiv_chowk_parks.json').then(res => res.json()).then(data => {
-      setParksData(data);
-      const trees: any[] = [];
-      data.features.forEach((feature: any) => {
-        if (feature.geometry.type === 'Polygon') {
-          const coords = feature.geometry.coordinates[0];
-          if (coords.length > 3) {
-            let minLng = 180, maxLng = -180, minLat = 90, maxLat = -90;
-            coords.forEach((p: any) => {
-              if (p[0] < minLng) minLng = p[0];
-              if (p[0] > maxLng) maxLng = p[0];
-              if (p[1] < minLat) minLat = p[1];
-              if (p[1] > maxLat) maxLat = p[1];
-            });
-            const numTrees = 20 + Math.floor(Math.random() * 30);
-            for(let i=0; i<numTrees; i++) {
-              trees.push({
-                position: [
-                  minLng + Math.random() * (maxLng - minLng),
-                  minLat + Math.random() * (maxLat - minLat)
-                ],
-                height: 4 + Math.random() * 6,
-                radius: 2 + Math.random() * 2
-              });
-            }
-          }
-        }
-      });
-      setTreeData(trees);
-    });
-    fetch('/traffic_lights.json').then(res => res.json()).then(data => {
-      const withPhases = data.map((tl: any, i: number) => ({ ...tl, phaseOffset: i % 3 }));
-      setTrafficLights(withPhases);
-      trafficLightsRef.current = withPhases;
-    });
-  }, []);
 
   useEffect(() => {
     rainRef.current = rainIntensity;
@@ -528,13 +500,17 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
     framedRef.current = true;
     const pts = (liveAgents || []).flatMap((l: any) => l.polyline || []);
     if (pts.length === 0) return;
-    const lats = pts.map((p: number[]) => p[0]);
-    const lngs = pts.map((p: number[]) => p[1]);
+    const bounds = pts.reduce((b: any, [lat, lng]: number[]) => ({
+      minLat: Math.min(b.minLat, lat),
+      maxLat: Math.max(b.maxLat, lat),
+      minLng: Math.min(b.minLng, lng),
+      maxLng: Math.max(b.maxLng, lng)
+    }), { minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity });
     setViewState(prev => ({
       ...prev,
-      latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
-      longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
-      zoom: 13
+      latitude: (bounds.minLat + bounds.maxLat) / 2,
+      longitude: (bounds.minLng + bounds.maxLng) / 2,
+      zoom: 14.2
     }));
   }, [engineMode, liveAgents, povMode]);
   useEffect(() => { simClockRef.current = simClock; }, [simClock]);
@@ -576,37 +552,6 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
       };
     });
   }, [liveAgents, engineMode]);
-
-  useEffect(() => {
-    if (engineMode) return;
-    if (rawAgentsData && rawAgentsData.length > 0) {
-      agentsRef.current = rawAgentsData.map((agent, i) => {
-        const path = agent.path || [];
-        // Route length in metres, used to report a real km/h speed.
-        let pathMeters = 0;
-        for (let k = 0; k < path.length - 1; k++) {
-          pathMeters += metersBetween([path[k][1], path[k][0]], [path[k + 1][1], path[k + 1][0]]);
-        }
-        return {
-          ...agent,
-          ...buildIdentity(agent.id, agent.type),
-          path,
-          pathMeters,
-          // Stagger departures so agents do not all start bumper to bumper.
-          progress: (i * 0.137) % 1,
-          index: i,
-          currentPosition: path.length > 0 ? [path[0][1], path[0][0]] : [0, 0],
-          currentAngle: path.length > 1 ? bearingBetween(path[0], path[1]) : 0,
-          currentSpeed: 0,
-          dwellUntil: 0,
-          nextStopIndex: agent.type === 'bus' ? 0.2 : 1,
-          activity: 'Setting off',
-          activityLog: [] as { time: number; text: string }[],
-          trips: 0
-        };
-      });
-    }
-  }, [rawAgentsData]);
 
   useEffect(() => {
     const animate = () => {
@@ -762,9 +707,9 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
         while (diff > 180) diff -= 360;
         item.currentAngle = (item.currentAngle + diff * 0.15 + 360) % 360;
 
-        // Delhi drives on the left: vehicles hug their own lane, pedestrians walk the footpath.
+        // New York drives on the right; offset traffic and pedestrians to the right of travel.
         const lateral = item.type === 'pedestrian' ? 5.5 : (item.type === 'bus' ? 3.2 : 2.6);
-        const [offLat, offLng] = offsetByBearing(lat, lng, item.currentAngle - 90, lateral);
+        const [offLat, offLng] = offsetByBearing(lat, lng, item.currentAngle + 90, lateral);
         item.currentPosition = [offLng, offLat];
       });
 
@@ -873,7 +818,7 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
     ? visibleAgents.filter(a => a.id !== selectedAgentId)
     : visibleAgents;
 
-  const mapStyle = "mapbox://styles/mapbox/standard"; // Mapbox Standard supports built-in 3D buildings and trees
+  const mapStyle = "mapbox://styles/mapbox/standard-satellite";
 
   // Homes of the followed citizens, and the people currently standing in them.
   const homeList = useMemo(() => Object.entries(dwellings).map(([agentId, d]: any) => ({
@@ -939,26 +884,15 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
 
   // Homes near the camera only, plus whoever is being followed. Distance is measured
   // against the view centre, which is cheap and good enough for culling.
-  const visibleHomes = useMemo(() => {
-    // Indoors the selected home is replaced by its floor plan, but the neighbours must
-    // still be culled — standing in one kitchen is no reason to draw the other 1,199.
-    const radiusDeg = 0.004; // ~450 m
-    const near = homeList.filter(h =>
-      h.agentId !== selectedAgentId &&
-      Math.abs(h.lat - viewState.latitude) < radiusDeg &&
-      Math.abs(h.lon - viewState.longitude) < radiusDeg
-    );
-    if (isIndoors) return near.slice(0, 250);
-
-    const selected = homeList.filter(h => h.agentId === selectedAgentId);
-    if (!showHomes) return selected;
-    return [...selected, ...near.slice(0, 250)];
-  }, [homeList, showHomes, isIndoors, selectedAgentId, viewState.latitude, viewState.longitude]);
+  // Mapbox's detailed building mesh supplies the neighborhood; keep only the followed
+  // household's affordability model so hundreds of square overlays do not hide it.
+  const visibleHomes = useMemo(
+    () => homeList.filter(h => h.agentId === selectedAgentId),
+    [homeList, selectedAgentId]
+  );
 
   const layers = [
-    // Base ground and 3D buildings come from the Mapbox Standard style.
-
-    // Homes are only drawn close up. Mapbox already renders Delhi's real buildings, so
+    // Homes are only drawn close up. Mapbox renders New York's 3D buildings, so
     // stamping a box on every one of a thousand home nodes buries the city it is meant to
     // illustrate. Up close (or for the citizen being followed) they become useful again.
     visibleHomes.length > 0 && new PolygonLayer({
@@ -1017,14 +951,14 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
     // Residents at home or at work get a person model; the working city — stalls, shops
     // and delivery riders — is drawn as sized, coloured pitches so trades are tellable
     // apart at a glance.
-    standingCitizens.length > 0 && (useModels ? new ScenegraphLayer({
+    standingCitizens.length > 0 && (usePersonModel ? new ScenegraphLayer({
       id: 'standing-people-layer',
       data: standingCitizens,
       pickable: true,
       scenegraph: '/person.glb',
       getPosition: (d: any) => d.position,
       getOrientation: (d: any) => [0, (hashString(d.agent_id) % 360), 0],
-      sizeScale: 1.5,
+      sizeScale: 1,
       _lighting: 'pbr'
     }) : new ScatterplotLayer({
       id: 'standing-people-columns-layer',
@@ -1059,54 +993,6 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
       updateTriggers: { getFillColor: selectedAgentId, getLineColor: isDay }
     }),
 
-    // Parks — the base map already tints green space, so this is a faint wash that only
-    // appears close up, never a slab of colour over the city.
-    parksData && showStreetDetail && new GeoJsonLayer({
-      id: 'parks-layer',
-      data: parksData,
-      pickable: false,
-      filled: true,
-      stroked: false,
-      getFillColor: isDay ? [134, 190, 120, 70] : [26, 62, 38, 90]
-    }),
-
-    // Street trees scattered through the parks.
-    treeData.length > 0 && showHomes && (useModels ? new ScenegraphLayer({
-      id: 'trees-layer',
-      data: treeData,
-      pickable: false,
-      scenegraph: '/tree.glb',
-      getPosition: (d: any) => d.position,
-      getScale: (d: any) => [d.radius * 0.5, d.height * 0.2, d.radius * 0.5],
-      sizeScale: 1,
-      _lighting: 'pbr'
-    }) : new ColumnLayer({
-      id: 'trees-columns-layer',
-      data: treeData,
-      pickable: false,
-      diskResolution: 6,
-      radius: 1,
-      radiusUnits: 'meters',
-      extruded: true,
-      getPosition: (d: any) => d.position,
-      getElevation: (d: any) => d.height,
-      getLineWidth: 0,
-      getFillColor: isDay ? [64, 138, 74, 235] : [26, 72, 42, 235]
-    })),
-
-    // The drivable network the vehicles are routed on. Mapbox already draws the streets,
-    // so this is opt-in via the Road Network overlay and deliberately thin.
-    roadData && activeOverlay === "Road Network" && showStreetDetail && new GeoJsonLayer({
-      id: 'roads-layer',
-      data: roadData,
-      pickable: false,
-      stroked: true,
-      getLineColor: isDay ? [59, 130, 246, 90] : [96, 165, 250, 80],
-      getLineWidth: 2,
-      lineWidthUnits: 'meters',
-      lineWidthMinPixels: 1
-    }),
-
     // Population heat: every citizen the engine simulates, not just the followed cohort.
     gridCells.length > 0 && activeOverlay === "Agent Congestion" && new ColumnLayer({
       id: 'congestion-grid-layer',
@@ -1127,27 +1013,16 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
       updateTriggers: { getElevation: gridCells, getFillColor: gridCells }
     }),
 
-    // Rajiv Chowk interchange marker.
+    // Times Square subway station.
     new IconLayer({
       id: 'metro-station-layer',
-      data: [{ position: [77.2197, 28.6328] }],
+      data: [{ position: [-73.9845, 40.7546] }],
       pickable: false,
       getIcon: () => ({ url: METRO_URL, width: 120, height: 120, anchorY: 60 }),
       getPosition: (d: any) => d.position,
       getSize: 52,
       sizeUnits: 'pixels',
       billboard: true
-    }),
-
-    walkData && showHomes && new GeoJsonLayer({
-      id: 'walk-layer',
-      data: walkData,
-      pickable: false,
-      stroked: true,
-      getLineColor: isDay ? [148, 163, 184, 90] : [203, 213, 225, 70],
-      getLineWidth: 1.5,
-      lineWidthUnits: 'meters',
-      lineWidthMinPixels: 1
     }),
 
     // Moving traffic, always visible. A 4 m car is sub-pixel in a wide shot, so this keeps
@@ -1171,40 +1046,43 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
     }),
 
     // Cars
-    useModels ? new ScenegraphLayer({
+    useCarModel ? new ScenegraphLayer({
       id: 'cars-layer',
       data: renderableAgents.filter(a => a.type === 'car'),
       pickable: true,
       scenegraph: '/car.glb',
       getPosition: (d: any) => d.currentPosition || [0, 0, 0],
       getOrientation: (d: any) => [0, -(d.currentAngle || 0), 0], // Rotate to face heading natively
-      sizeScale: 1.2,
+      sizeScale: 0.62,
       _lighting: 'pbr',
       updateTriggers: { getPosition: tick, getOrientation: tick }
     }) : vehicleBoxLayer('cars-layer', renderableAgents.filter(a => a.type === 'car'), tick, selectedAgentId),
 
-    // Buses
-    useModels ? new ScenegraphLayer({
-      id: 'buses-layer',
+    // A top-down bus silhouette reads as a vehicle at city zoom without placeholder cubes.
+    new IconLayer({
+      id: 'buses-layer-boxes',
       data: renderableAgents.filter(a => a.type === 'bus'),
       pickable: true,
-      scenegraph: '/bus.glb',
+      getIcon: () => BUS_ICON,
       getPosition: (d: any) => d.currentPosition || [0, 0, 0],
-      getOrientation: (d: any) => [0, -(d.currentAngle || 0), 0],
-      sizeScale: 1.2,
-      _lighting: 'pbr',
-      updateTriggers: { getPosition: tick, getOrientation: tick }
-    }) : vehicleBoxLayer('buses-layer', renderableAgents.filter(a => a.type === 'bus'), tick, selectedAgentId),
+      getAngle: (d: any) => d.currentAngle || 0,
+      getSize: 11,
+      sizeUnits: 'meters',
+      sizeMinPixels: 5,
+      sizeMaxPixels: 32,
+      getColor: (d: any) => d.id === selectedAgentId ? [255, 225, 130, 255] : [255, 255, 255, 255],
+      updateTriggers: { getPosition: tick, getAngle: tick, getColor: selectedAgentId }
+    }),
 
     // Pedestrians
-    useModels ? new ScenegraphLayer({
+    usePersonModel ? new ScenegraphLayer({
       id: 'pedestrians-layer',
       data: renderableAgents.filter(a => a.type === 'pedestrian'),
       pickable: true,
       scenegraph: '/person.glb',
       getPosition: (d: any) => d.currentPosition || [0, 0, 0],
       getOrientation: (d: any) => [0, -(d.currentAngle || 0), 0],
-      sizeScale: 1.5,
+      sizeScale: 1,
       _lighting: 'pbr',
       updateTriggers: { getPosition: tick, getOrientation: tick }
     }) : new ColumnLayer({
@@ -1292,10 +1170,25 @@ const DashboardMap: React.FC<DashboardMapProps> = ({ rainIntensity, congestionFe
         {MAPBOX_TOKEN && (
           <Map 
             mapStyle={mapStyle}
-            mapboxAccessToken={MAPBOX_TOKEN} 
+            mapboxAccessToken={MAPBOX_TOKEN}
+            antialias
+            maxPitch={70}
+            logoPosition="bottom-left"
+            config={{
+              basemap: {
+                lightPreset: isDay ? 'day' : 'night',
+                theme: 'default',
+                showPointOfInterestLabels: false,
+                showTransitLabels: true,
+                showRoadLabels: true,
+                showPlaceLabels: true,
+                show3dObjects: true
+              }
+            }}
           />
         )}
       </DeckGL>
+      <div className="map-cinematic-grade absolute inset-0 z-[2] pointer-events-none" />
       
       {/* Legend + level-of-detail hint. Detail is revealed by zooming, so say so rather
           than leaving the map looking empty from above. */}
