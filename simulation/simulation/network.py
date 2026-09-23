@@ -23,10 +23,10 @@ from typing import TypedDict
 
 import networkx as nx
 
-# Central coordinates — Rajiv Chowk Metro Station, New Delhi
-# Study area: ~3–5 km radius around this point
-CITY_LAT = 28.6328
-CITY_LON = 77.2197
+# Central coordinates — Midtown Manhattan, New York City
+# Study area: ~2.6 km radius around Times Square and Bryant Park
+CITY_LAT = 40.7546
+CITY_LON = -73.9845
 
 # Default travel speed constants (meters per second)
 WALK_SPEED = 1.4  # ~5 km/h
