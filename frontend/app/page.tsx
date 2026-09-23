@@ -2,6 +2,18 @@
 
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
+import {
+  Activity,
+  BusFront,
+  CloudRain,
+  IndianRupee,
+  Layers3,
+  Map as MapIcon,
+  Radio,
+  Route,
+  Sparkles,
+  Users,
+} from "lucide-react";
 
 const DashboardMap = dynamic(() => import("../components/DashboardMap"), {
   ssr: false,
@@ -18,6 +30,7 @@ const WS_BASE = API_BASE.replace('http', 'ws');
 export default function Dashboard() {
   // --- SIMULATION STATES ---
   const [scenarioId, setScenarioId] = useState<string | null>(null);
+  const [population, setPopulation] = useState(0);
   const [backendMetrics, setBackendMetrics] = useState<any>(null);
   const [wsStatus, setWsStatus] = useState<string>("Connecting...");
   const wsRef = useRef<WebSocket | null>(null);
@@ -80,27 +93,33 @@ export default function Dashboard() {
           // Join a city that is already alive before starting a cold one: a fresh run
           // begins before dawn, so reloading into a new scenario means watching an empty
           // map until the morning peak arrives. Otherwise prefer a run on real streets.
-          const target =
-            data.find((s: any) => s.status === 'running' && s.config?.use_real_data) ||
-            data.find((s: any) => s.status === 'running') ||
-            data.find((s: any) => s.config?.use_real_data) ||
-            data.find((s: any) => s.id.includes("scenario_a")) ||
-            data[0];
-          setScenarioId(target.id);
-          // Only start it if nothing is driving it already.
-          if (target.status !== 'running') {
-            fetch(`${API_BASE}/api/v1/scenarios/${target.id}/start`, { method: 'POST' }).catch(() => {});
+          const target = data.find((s: any) => s.config?.city === 'new_york' && s.config?.max_tracked_agents >= 5000);
+          if (target) {
+            setScenarioId(target.id);
+            setPopulation(target.config.population);
+            if (target.status !== 'running') {
+              fetch(`${API_BASE}/api/v1/scenarios/${target.id}/start`, { method: 'POST' }).catch(() => {});
+            }
+          } else {
+            fetch(`${API_BASE}/api/v1/scenarios`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config: { name: "midtown_manhattan", city: "new_york", population: 5000, max_tracked_agents: 5000, seed: 42, use_real_data: true, start_time_minutes: 540 } })
+            }).then(res => res.json()).then(target => {
+              setScenarioId(target.id);
+              setPopulation(target.config?.population ?? 5000);
+              fetch(`${API_BASE}/api/v1/scenarios/${target.id}/start`, { method: 'POST' });
+            });
           }
         } else {
             // Create one if none exists
             fetch(`${API_BASE}/api/v1/scenarios`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                // 1,200 agents keeps a real-network rush-hour tick near ~2s; the full
-                // 5,000-agent population runs ~15s/tick and makes the map crawl.
-                body: JSON.stringify({ config: { name: "live_session", city: "delhi", population: 1200, seed: 42, use_real_data: true, start_time_minutes: 390 } })
+                body: JSON.stringify({ config: { name: "midtown_manhattan", city: "new_york", population: 5000, max_tracked_agents: 5000, seed: 42, use_real_data: true, start_time_minutes: 540 } })
             }).then(res => res.json()).then(target => {
                 setScenarioId(target.id);
+                setPopulation(target.config?.population ?? 5000);
                 fetch(`${API_BASE}/api/v1/scenarios/${target.id}/start`, { method: 'POST' });
             });
         }
@@ -257,39 +276,84 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="absolute top-6 left-6 z-[1000] flex gap-4">
-        <div className="h-12 px-6 rounded-xl bg-slate-900/90 backdrop-blur-md border border-slate-700 flex flex-col justify-center shadow-lg">
-          <h1 className="text-sm font-bold tracking-widest text-emerald-400 m-0">PRAVAAH</h1>
-          <p className="text-[10px] text-slate-400 m-0">SIMULATION ENGINE</p>
+      <div className="absolute top-5 left-5 z-[1000] flex items-stretch gap-3">
+        <div className="hud-panel h-[58px] px-4 flex items-center gap-3.5">
+          <div className="relative grid size-9 place-items-center rounded-xl bg-emerald-400/10 ring-1 ring-inset ring-emerald-300/20">
+            <Sparkles className="size-[18px] text-emerald-300" strokeWidth={1.7} />
+            <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-emerald-300 shadow-[0_0_10px_#6ee7b7]" />
+          </div>
+          <div className="pr-1">
+            <h1 className="text-[15px] font-semibold leading-none tracking-[0.22em] text-white">PRAVAAH</h1>
+            <p className="mt-1.5 text-[8px] font-medium tracking-[0.28em] text-slate-400">URBAN DIGITAL TWIN</p>
+          </div>
         </div>
         {backendMetrics && (
-          <div className="h-12 px-6 rounded-xl bg-slate-900/90 backdrop-blur-md border border-slate-700 flex items-center gap-6 shadow-lg">
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 uppercase tracking-widest">Tick</span>
-              <span className="text-sm font-mono text-white">{backendMetrics.tick || 0}</span>
+          <div className="hud-panel min-h-[58px] px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex flex-col border-r border-white/10 pr-4">
+              <span className="hud-eyebrow">City population</span>
+              <span className="hud-value">{population.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center gap-2.5 border-r border-white/10 pr-5">
+              <Activity className="size-4 text-emerald-300" />
+              <div className="flex flex-col">
+                <span className="hud-eyebrow">Tick</span>
+                <span className="hud-value">{backendMetrics.tick || 0}</span>
+              </div>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 uppercase tracking-widest">AQI</span>
-              <span className={`text-sm font-mono ${backendMetrics.aqi_estimate > 150 ? 'text-red-400' : 'text-amber-400'}`}>{backendMetrics.aqi_estimate || '--'}</span>
+              <span className="hud-eyebrow">AQI</span>
+              <span className={`hud-value ${backendMetrics.aqi_estimate > 150 ? 'text-rose-300' : 'text-amber-300'}`}>{backendMetrics.aqi_estimate || '--'}</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 uppercase tracking-widest">Congestion</span>
-              <span className="text-sm font-mono text-white">{((backendMetrics.road_congestion_index || 0) * 100).toFixed(1)}%</span>
+              <span className="hud-eyebrow">Flow</span>
+              <span className="hud-value">{((backendMetrics.road_congestion_index || 0) * 100).toFixed(1)}%</span>
             </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 uppercase tracking-widest">Commuters</span>
-              <span className="text-sm font-mono text-white">{backendMetrics.agents_commuting || 0}</span>
+            <div className="flex items-center gap-2.5">
+              <Users className="size-4 text-sky-300" />
+              <div className="flex flex-col">
+                <span className="hud-eyebrow">Moving</span>
+                <span className="hud-value">{backendMetrics.agents_commuting || 0}</span>
+              </div>
             </div>
+            <div className="flex flex-col border-l border-white/10 pl-4">
+              <span className="hud-eyebrow">Metro load</span>
+              <span className="hud-value">{Math.round(backendMetrics.metro_load_pct || 0)}%</span>
+            </div>
+            <div className="flex flex-col border-l border-white/10 pl-4">
+              <span className="hud-eyebrow">Bus load</span>
+              <span className="hud-value">{Math.round(backendMetrics.bus_load_pct || 0)}%</span>
+            </div>
+            <div className="flex flex-col border-l border-white/10 pl-4">
+              <span className="hud-eyebrow">Avg commute</span>
+              <span className="hud-value">{Math.round(backendMetrics.avg_commute_minutes || 0)} min</span>
+            </div>
+            {!!Object.keys(backendMetrics.mode_share || {}).length && (
+              <div className="flex w-full flex-wrap items-center gap-2 border-t border-white/10 pt-2">
+                <span className="hud-eyebrow mr-1">Travel modes</span>
+                {Object.entries(backendMetrics.mode_share).map(([mode, share]) => (
+                  <span key={mode} className="rounded-md bg-white/[0.06] px-2 py-1 text-[9px] font-medium capitalize text-slate-300">
+                    {mode.replaceAll('_', ' ')} <b className="ml-1 text-white">{Math.round(Number(share) * 100)}%</b>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      <div className="absolute top-6 right-6 z-[1000] flex flex-col items-end gap-2">
-        <div className="h-12 px-4 rounded-xl bg-slate-900/90 backdrop-blur-md border border-slate-700 flex items-center gap-3 shadow-lg">
-          <div className={`animate-pulse w-2 h-2 rounded-full ${wsStatus === 'Live Connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-          <span className={`text-xs font-semibold uppercase tracking-widest ${wsStatus === 'Live Connected' ? 'text-emerald-500' : 'text-red-500'}`}>
-            {wsStatus}
+      <div className="absolute top-5 right-5 z-[1000] flex flex-col items-end gap-2">
+        <div className="hud-panel h-11 px-3.5 flex items-center gap-3">
+          <span className={`relative flex size-2.5 ${wsStatus === 'Live Connected' ? 'text-emerald-300' : 'text-rose-400'}`}>
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-50" />
+            <span className="relative inline-flex size-2.5 rounded-full bg-current shadow-[0_0_12px_currentColor]" />
           </span>
+          <div>
+            <div className="text-[8px] font-medium uppercase tracking-[0.24em] text-slate-500">Network</div>
+            <div className={`mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${wsStatus === 'Live Connected' ? 'text-emerald-200' : 'text-rose-300'}`}>
+              {wsStatus === 'Live Connected' ? 'Live sync' : wsStatus}
+            </div>
+          </div>
+          <Radio className="ml-1 size-3.5 text-slate-500" />
         </div>
 
         {/* Never let canned demo traffic pass for a simulated city. */}
@@ -321,49 +385,56 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="absolute bottom-6 left-6 z-[1000] w-80 p-6 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-2xl flex flex-col gap-6">
+      <div className="hud-panel absolute bottom-5 left-5 z-[1000] w-[318px] p-5">
         <div>
-          <h3 className="text-sm font-bold text-white mb-4 uppercase tracking-wider">Policy Injection</h3>
+          <div className="mb-5 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-8 place-items-center rounded-lg bg-emerald-400/10 text-emerald-300 ring-1 ring-inset ring-emerald-300/15"><Activity className="size-4" /></span>
+              <div><h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white">Policy lab</h3><p className="mt-0.5 text-[9px] text-slate-500">Live intervention controls</p></div>
+            </div>
+            <span className="rounded-full bg-emerald-300/10 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.16em] text-emerald-200 ring-1 ring-inset ring-emerald-300/15">Active</span>
+          </div>
           <div className="flex flex-col gap-4">
             <div>
               <div className="flex justify-between mb-2">
                 <span className="text-xs text-slate-300 font-medium">Bus Capacity</span>
                 <span className="text-xs font-mono text-emerald-400">{busCapacity}%</span>
               </div>
-              <input type="range" min="0" max="100" value={busCapacity} onChange={(e) => setBusCapacity(Number(e.target.value))} onMouseUp={(e: any) => handleBusChange(Number(e.target.value))} onTouchEnd={(e: any) => handleBusChange(Number(e.target.value))} className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full" />
+              <input aria-label="Bus capacity" type="range" min="0" max="100" value={busCapacity} onChange={(e) => setBusCapacity(Number(e.target.value))} onMouseUp={(e: any) => handleBusChange(Number(e.target.value))} onTouchEnd={(e: any) => handleBusChange(Number(e.target.value))} className="hud-slider accent-emerald" />
             </div>
             <div>
               <div className="flex justify-between mb-2">
                 <span className="text-xs text-slate-300 font-medium">Congestion Fee</span>
                 <span className="text-xs font-mono text-amber-400">₹{congestionFee}</span>
               </div>
-              <input type="range" min="0" max="100" value={congestionFee} onChange={(e) => setCongestionFee(Number(e.target.value))} onMouseUp={(e: any) => handleFeeChange(Number(e.target.value))} onTouchEnd={(e: any) => handleFeeChange(Number(e.target.value))} className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-amber-500 [&::-webkit-slider-thumb]:rounded-full" />
+              <input aria-label="Congestion fee" type="range" min="0" max="100" value={congestionFee} onChange={(e) => setCongestionFee(Number(e.target.value))} onMouseUp={(e: any) => handleFeeChange(Number(e.target.value))} onTouchEnd={(e: any) => handleFeeChange(Number(e.target.value))} className="hud-slider accent-amber" />
             </div>
             <div>
               <div className="flex justify-between mb-2">
                 <span className="text-xs text-slate-300 font-medium">Rain Intensity</span>
                 <span className="text-xs font-mono text-blue-400">{rainIntensity}%</span>
               </div>
-              <input type="range" min="0" max="100" value={rainIntensity} onChange={(e) => setRainIntensity(Number(e.target.value))} onMouseUp={(e: any) => handleRainChange(Number(e.target.value))} onTouchEnd={(e: any) => handleRainChange(Number(e.target.value))} className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:rounded-full" />
+              <input aria-label="Rain intensity" type="range" min="0" max="100" value={rainIntensity} onChange={(e) => setRainIntensity(Number(e.target.value))} onMouseUp={(e: any) => handleRainChange(Number(e.target.value))} onTouchEnd={(e: any) => handleRainChange(Number(e.target.value))} className="hud-slider accent-sky" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="absolute bottom-6 right-6 z-[1000] p-4 rounded-2xl bg-slate-900/90 backdrop-blur-xl border border-slate-700 shadow-2xl flex items-center gap-4">
-        <div className="flex flex-col w-64">
+      <div className="hud-panel absolute bottom-5 right-5 z-[1000] flex items-center gap-3 px-4 py-3">
+        <div className="grid size-8 place-items-center rounded-lg bg-sky-300/10 text-sky-200 ring-1 ring-inset ring-sky-200/15"><MapIcon className="size-4" /></div>
+        <div className="flex w-60 flex-col">
           <div className="flex justify-between mb-2 items-center">
             <span className="text-xs font-bold text-white">{formatTime(timeOfDay)}</span>
             <div className="flex gap-2 items-center">
               {isTimeManual && (
                 <button 
                   onClick={() => { setIsTimeManual(false); isTimeManualRef.current = false; }} 
-                  className="text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-emerald-400 hover:bg-slate-700 transition-colors"
+                  className="rounded-full bg-white/5 px-2 py-0.5 text-[8px] text-emerald-300 transition-colors hover:bg-white/10"
                 >
-                  Resume Auto
+                  Sync
                 </button>
               )}
-              <span className="text-[10px] font-mono text-slate-400 uppercase">{timeOfDay >= 6 && timeOfDay <= 18 ? 'Day' : 'Night'}</span>
+              <span className="text-[8px] font-medium uppercase tracking-[0.18em] text-slate-400">{timeOfDay >= 6 && timeOfDay <= 18 ? 'Daylight' : 'Night'}</span>
             </div>
           </div>
           <input 
@@ -380,18 +451,19 @@ export default function Dashboard() {
                 isTimeManualRef.current = true;
               }
             }} 
-            className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
+            className="hud-slider accent-sky"
           />
         </div>
       </div>
       
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex gap-2 p-2 rounded-2xl bg-slate-900/80 backdrop-blur-xl border border-slate-700 shadow-2xl">
+      <div className="hud-panel absolute bottom-5 left-1/2 z-[1000] flex -translate-x-1/2 items-center gap-1 p-1.5">
         {["Road Network", "Agent Congestion", "Transit Overlay"].map((layer, idx) => (
           <button 
             key={idx} 
             onClick={() => setActiveOverlay(layer)}
-            className={`px-4 py-2 text-xs font-medium rounded-xl transition-colors ${activeOverlay === layer ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:bg-slate-800'}`}
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-[10px] font-medium transition-all duration-300 ${activeOverlay === layer ? 'bg-emerald-300 text-[#06110e] shadow-[0_4px_18px_rgba(110,231,183,0.24)]' : 'text-slate-400 hover:bg-white/[0.06] hover:text-white'}`}
           >
+            {layer === "Road Network" ? <Route className="size-3.5" /> : layer === "Agent Congestion" ? <Users className="size-3.5" /> : <Layers3 className="size-3.5" />}
             {layer}
           </button>
         ))}

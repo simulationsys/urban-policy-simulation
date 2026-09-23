@@ -41,8 +41,8 @@ docker-compose up --build
 ### Running it locally with the real simulation
 
 ```bash
-# 1. Build the Delhi street network + census-derived population (once, ~20s)
-python data/pipelines/run_all.py
+# 1. Build the Midtown Manhattan street network + synthetic population (once)
+python data/pipelines/build_new_york.py
 ```
 
 ```bash
