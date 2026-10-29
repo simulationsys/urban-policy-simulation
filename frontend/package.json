@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "npm run dev --prefix landing-page",
+    "build": "npm run build --prefix landing-page",
+    "start": "npm run start --prefix landing-page",
+    "lint": "npm run lint --prefix landing-page"
   },
   "dependencies": {
     "@studio-freight/lenis": "^1.0.42",

@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   frontend:
-    build: ./frontend
+    build: ./frontend/landing-page
     ports:
       - "3000:3000"
     environment:
